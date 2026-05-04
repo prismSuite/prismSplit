@@ -1,0 +1,6 @@
+{
+  "name": "PrismSplit",
+  "description": "Separación de pistas mediante modelos de IA locales (Tauri + Rust + React).",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

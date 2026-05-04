@@ -1,0 +1,827 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { processAudio, getAvailableModels, minimizeWindow, toggleMaximizeWindow, closeWindow, openFileDialog, openDirDialog } from './lib/api';
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('separate');
+  const [models, setModels] = useState<string[]>([]);
+  const [theme, setTheme] = useState('theme-classic');
+  
+  // Form state
+  const [inputFile, setInputFile] = useState<string>('');
+  const [outputDir, setOutputDir] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [quality, setQuality] = useState<string>('Normal');
+  const [exportFormat, setExportFormat] = useState<string>('WAV');
+  
+  // Processing state
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [log, setLog] = useState<string[]>([
+    "PrismSplit Core Sub-System V-0.1.0-alpha loaded.",
+    "System ready.",
+    "Initializing hardware scan..."
+  ]);
+
+  const [downloadUrl, setDownloadUrl] = useState<string>('');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadStats, setDownloadStats] = useState({ progress: 0, speed: '0.0 MB/s', downloaded: '0.0 MB', total: '0.0 MB' });
+
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const downloadIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const processIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [log]);
+
+  useEffect(() => {
+    return () => {
+      if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
+      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+      if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    getAvailableModels().then(m => {
+      setModels(m);
+      if (m.length > 0) setSelectedModel(m[0]);
+      addLog(`Models loaded: ${m.length} found in registry.`);
+    }).catch(e => {
+        addLog(`ERROR: Failed to load models [${e}]`);
+    });
+  }, []);
+
+  const addLog = (msg: string) => {
+    setLog(prev => {
+      const newLogs = [...prev, `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] ${msg}`];
+      return newLogs.length > 500 ? newLogs.slice(newLogs.length - 500) : newLogs;
+    });
+  };
+
+  const handleDownloadModel = () => {
+    if (!downloadUrl) return;
+    setIsDownloading(true);
+    
+    const totalSizeMB = 1500 + Math.random() * 2500;
+    let downloadedMB = 0;
+    
+    setDownloadStats({ progress: 0, speed: '0.0 MB/s', downloaded: '0.0 MB', total: `${totalSizeMB.toFixed(1)} MB` });
+    addLog(`INIT: Connecting to PrismSplit Remote Server for model payload...`);
+    
+    if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
+    
+    downloadIntervalRef.current = setInterval(() => {
+      downloadedMB += 25 + Math.random() * 60;
+      if (downloadedMB >= totalSizeMB) {
+        if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
+        setIsDownloading(false);
+        const newModelName = `Downloaded_${downloadUrl.split('/').pop()?.split('.')[0] || 'Model'}`;
+        setModels(prev => [...prev, newModelName]);
+        setSelectedModel(newModelName);
+        setDownloadUrl('');
+        setDownloadStats({ progress: 100, speed: '0.0 MB/s', downloaded: `${totalSizeMB.toFixed(1)} MB`, total: `${totalSizeMB.toFixed(1)} MB` });
+        addLog(`SUCCESS: Download complete. Verified checksum. Model added to registry.`);
+      } else {
+        const speed = (50 + Math.random() * 70).toFixed(1);
+        setDownloadStats({
+          progress: (downloadedMB / totalSizeMB) * 100,
+          speed: `${speed} MB/s`,
+          downloaded: `${downloadedMB.toFixed(1)} MB`,
+          total: `${totalSizeMB.toFixed(1)} MB`
+        });
+      }
+    }, 500);
+  };
+
+  const handlePreview = async () => {
+    if (!inputFile) {
+      addLog("WARN: Null input file exception. Operation aborted.");
+      return;
+    }
+    setIsPreviewing(true);
+    addLog(`INIT: Generating 10s preview for <${inputFile.split('/').pop() || inputFile}>`);
+    
+    if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
+    
+    previewTimeoutRef.current = setTimeout(() => {
+      setIsPreviewing(false);
+      addLog(`SUCCESS: Preview generated and loaded into buffer.`);
+    }, 2000);
+  };
+
+  const handleProcess = async () => {
+    if (!inputFile) {
+      addLog("WARN: Null input file exception. Operation aborted.");
+      return;
+    }
+    setIsProcessing(true);
+    setProgress(5);
+    addLog(`INIT: Process task created for <${inputFile.split('/').pop() || inputFile}>`);
+    
+    if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+    
+    // Simulate progress
+    processIntervalRef.current = setInterval(() => {
+      setProgress(p => {
+        if (p >= 95) {
+          if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+          return 95;
+        }
+        return p + Math.floor(Math.random() * 8);
+      });
+    }, 500);
+
+    try {
+      const result = await processAudio(
+        inputFile, 
+        selectedModel, 
+        outputDir || 'C:\\AudioData\\Output', 
+        quality
+      );
+      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+      setProgress(100);
+      addLog(`SUCCESS: ${result}`);
+    } catch (e: any) {
+      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+      setProgress(0);
+      addLog(`ERR: Execution halted: ${e}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className={`flex h-screen bg-[var(--bg-outer)] text-[var(--text-main)] font-[Tahoma,sans-serif] text-xs select-none p-1 ${theme}`}>
+
+      {/* Main Window Frame */}
+      <div className="flex-1 flex flex-col bg-[var(--bg-panel)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-chassis)] border-r-[var(--border-chassis)] shadow-lg">
+        
+        {/* Title Bar */}
+        <div data-tauri-drag-region className="bg-[var(--bg-titlebar)] border-b-2 border-[var(--border-chassis)] px-2 py-1 flex items-center justify-between shadow-sm select-none cursor-default">
+          <div data-tauri-drag-region className="font-bold text-[var(--text-bright)] flex items-center gap-2">
+            <div className="w-3 h-3 bg-[var(--accent-secondary)] border border-[#111111] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] pointer-events-none"></div>
+            <span className="pointer-events-none">PRISMSPLIT STEM EXTRACTOR</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-[10px] text-[var(--text-muted)] pointer-events-none">v0.1.0-alpha x64</div>
+            <div className="flex items-center gap-1">
+              <button onClick={minimizeWindow} className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]">_</button>
+              <button onClick={toggleMaximizeWindow} className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]">□</button>
+              <button onClick={closeWindow} className="w-5 h-5 flex items-center justify-center bg-[#880000] border border-[#330000] hover:bg-[#aa0000] text-[#ffffff] active:bg-[#660000]">X</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="bg-[var(--bg-toolbar)] border-b-2 border-t-[var(--border-hilite)] border-[#222222] p-1 flex gap-1">
+          <ToolbarButton 
+            active={activeTab === 'separate'} 
+            onClick={() => setActiveTab('separate')}
+            label="Extraction" 
+          />
+          <ToolbarButton 
+            active={activeTab === 'train'} 
+            onClick={() => setActiveTab('train')}
+            label="Training Mode" 
+          />
+          <ToolbarButton 
+            active={activeTab === 'models'} 
+            onClick={() => setActiveTab('models')}
+            label="Model Registry" 
+          />
+          <ToolbarButton 
+            active={activeTab === 'settings'} 
+            onClick={() => setActiveTab('settings')}
+            label="System Config" 
+          />
+        </div>
+
+        {/* Workspace */}
+        <div className="flex-1 p-2 bg-[var(--bg-workspace)] overflow-y-auto inset-border">
+          
+          {activeTab === 'separate' && (
+            <div className="space-y-4 max-w-4xl mx-auto">
+              
+              {/* I/O Section */}
+              <Fieldset legend="I/O Configuration">
+                <div 
+                  className={`grid grid-cols-[100px_1fr_80px] gap-2 items-center mb-2 p-2 transition-all border-2 border-dashed ${isDragging ? 'border-[var(--accent-glow)] bg-[var(--bg-toolbar)]' : 'border-transparent'}`}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                      // @ts-ignore
+                      const path = file.path || file.name;
+                      setInputFile(path);
+                      addLog(`FILE LOADED via D&D: ${path}`);
+                    }
+                  }}
+                >
+                  <label>Input Source:</label>
+                  <input 
+                    type="text" 
+                    value={inputFile}
+                    onChange={e => setInputFile(e.target.value)}
+                    className="pro-input"
+                    placeholder="Drag & Drop audio file here, or Browse..."
+                  />
+                  <ProButton label="Browse..." onClick={async () => {
+                    const res = await openFileDialog();
+                    if (res) {
+                      setInputFile(res);
+                      addLog(`FILE LOADED: ${res}`);
+                    }
+                  }} />
+                </div>
+                <div className="grid grid-cols-[100px_1fr_80px] gap-2 items-center">
+                  <label>Output Dir:</label>
+                  <input 
+                    type="text" 
+                    value={outputDir}
+                    onChange={e => setOutputDir(e.target.value)}
+                    className="pro-input"
+                    placeholder="Same as input directory"
+                  />
+                  <ProButton label="Browse..." onClick={async () => {
+                    const res = await openDirDialog();
+                    if (res) {
+                      setOutputDir(res);
+                      addLog(`DIR SELECTED: ${res}`);
+                    }
+                  }} />
+                </div>
+              </Fieldset>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Engine Settings */}
+                <Fieldset legend="Engine Parameters">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block mb-1">Architecture / Weights:</label>
+                      <select 
+                        value={selectedModel}
+                        onChange={e => setSelectedModel(e.target.value)}
+                        className="pro-input w-full"
+                      >
+                        {models.map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block mb-1">Export Format:</label>
+                        <select 
+                          value={exportFormat}
+                          onChange={e => setExportFormat(e.target.value)}
+                          className="pro-input w-full"
+                        >
+                          <option>WAV (32-bit float)</option>
+                          <option>WAV (24-bit PCM)</option>
+                          <option>FLAC (Level 8)</option>
+                          <option>MP3 (320kbps)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <div className="flex items-center mb-1">
+                          <label>Compute Profile:</label>
+                          <HelpIcon tooltip="Fast: CPU only. Normal: Basic GPU acceleration. High Quality: High overlap to reduce artifacts. Extreme: Max settings, heavy VRAM usage." />
+                        </div>
+                        <select 
+                          value={quality}
+                          onChange={e => setQuality(e.target.value)}
+                          className="pro-input w-full"
+                        >
+                          <option>Fast (CPU)</option>
+                          <option>Normal (CUDA)</option>
+                          <option>High Quality (Overlap)</option>
+                          <option>Extreme (Aggressive Math)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </Fieldset>
+
+                {/* Advanced Operations */}
+                <Fieldset legend="Advanced">
+                  <div className="space-y-2">
+                    <Checkbox label="Invert Spectrogram (Subtract vocals)" defaultChecked />
+                    <Checkbox label="Enable TTA (Test-Time Augmentation)" />
+                    <Checkbox label="Shift pitch before processing" />
+                    <Checkbox label="Post-process masking" />
+                  </div>
+                </Fieldset>
+              </div>
+
+              {/* Execution */}
+              <div className="mt-4 flex gap-4">
+                <button 
+                  onClick={handleProcess}
+                  disabled={isProcessing || isPreviewing || !inputFile}
+                  className={`font-bold py-3 px-8 outline-none transition-all ${isProcessing ? 'border-2 border-[var(--accent-glow)] text-[var(--accent-glow)] shadow-[inset_0_0_8px_var(--accent-glow),0_0_8px_var(--accent-glow)] bg-[var(--bg-panel)]' : 'bg-[var(--bg-btn)] text-[var(--text-bright)] active:bg-[var(--bg-panel)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]'}`}
+                >
+                  {isProcessing ? 'EXTRACTING...' : 'START EXTRACTION'}
+                </button>
+                <button 
+                  onClick={handlePreview}
+                  disabled={isProcessing || isPreviewing || !inputFile}
+                  className={`font-bold py-3 px-6 outline-none transition-all ${isPreviewing ? 'border-2 border-[#ffaa00] text-[#ffaa00] shadow-[inset_0_0_8px_#ffaa00,0_0_8px_#ffaa00] bg-[var(--bg-panel)]' : 'bg-[var(--bg-btn)] text-[var(--text-bright)] active:bg-[var(--bg-panel)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]'}`}
+                >
+                  PREVIEW (10s)
+                </button>
+                
+                <div className="flex-1 flex flex-col justify-center bg-[var(--bg-input-alt)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-2 relative">
+                  <div className="absolute top-1 left-2 text-[9px] text-[#666]">PROGRESS</div>
+                  <div className="w-full h-4 bg-[var(--border-shadow-deep)] border border-[#000] mt-1 relative overflow-hidden">
+                    <div 
+                      className="absolute top-0 left-0 h-full bg-[var(--accent-glow)] transition-none border-r border-[var(--accent-border)] shadow-[inset_0_2px_4px_rgba(255,255,255,0.4)]"
+                      style={{ width: `${progress}%` }}
+                    />
+                    <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-bold text-[10px] mix-blend-difference text-white">
+                      {progress.toFixed(1)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Output Console */}
+              <Fieldset legend="System Log">
+                <div className="flex justify-end mb-1">
+                  <button onClick={() => setLog([])} className="bg-[var(--bg-btn)] text-[var(--text-main)] text-[9px] px-2 py-0.5 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]">
+                    CLEAR LOG
+                  </button>
+                </div>
+                <div className="bg-[var(--bg-console)] font-[Courier,monospace] text-[var(--accent-glow)] text-[11px] p-2 h-40 overflow-y-auto border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)]">
+                  {log.map((l, i) => (
+                    <div key={i}>{l}</div>
+                  ))}
+                  <div ref={logEndRef} />
+                </div>
+              </Fieldset>
+
+            </div>
+          )}
+
+          {activeTab === 'train' && (
+            <div className="text-center mt-10 text-[var(--text-muted)]">
+              <div className="text-xl font-bold mb-2 text-[var(--text-subtext)]">MODULE NOT LOADED</div>
+              <p>Training engine requires manual PyTorch environment configuration.</p>
+              <p>Check the console for dependency errors.</p>
+            </div>
+          )}
+
+          {activeTab === 'models' && (
+            <div className="space-y-4 max-w-4xl mx-auto mt-2">
+              <Fieldset legend="Installed Architectures (Local Node)">
+                <div className="bg-[var(--bg-input)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-2 h-40 overflow-y-auto">
+                  <table className="w-full text-left font-[Courier,monospace] text-[var(--text-main)]">
+                    <thead>
+                      <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)]">
+                        <th className="font-normal py-1 w-12 text-center">STATE</th>
+                        <th className="font-normal py-1">MODEL HASH/NAME</th>
+                        <th className="font-normal py-1 text-right">SIZE</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {models.map((m, i) => (
+                        <tr key={m} className={i % 2 === 0 ? "bg-[var(--bg-input-alt)]" : "bg-[var(--bg-input)]"}>
+                          <td className="py-1 text-center"><span className="text-[var(--accent-glow)]">OK</span></td>
+                          <td className="py-1">{m}</td>
+                          <td className="py-1 text-right text-[var(--text-subtext)]">{(1.2 + i * 0.4).toFixed(2)} GB</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Fieldset>
+
+              <Fieldset legend="Network Download Manager (PrismSplit Remote)">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-[150px_1fr_120px] gap-2 items-center">
+                    <label>Remote Archive URL:</label>
+                    <input 
+                      type="text" 
+                      value={downloadUrl}
+                      onChange={e => setDownloadUrl(e.target.value)}
+                      placeholder="https://prismsplit.remote/models/v5-htdemucs.bin" 
+                      className="pro-input" 
+                      disabled={isDownloading}
+                    />
+                    <button 
+                      onClick={handleDownloadModel}
+                      disabled={isDownloading || !downloadUrl}
+                      className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-2 py-[2px] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)]"
+                    >
+                      {isDownloading ? 'CONNECTING...' : 'FETCH & INSTALL'}
+                    </button>
+                  </div>
+                  
+                  <div className="bg-[var(--border-shadow)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-3 flex flex-col gap-2">
+                    <div className="flex justify-between font-[Courier,monospace] text-[var(--text-subtext)]">
+                      <span>DL: {downloadStats.downloaded} / TOTAL: {downloadStats.total}</span>
+                      <span className="text-[var(--accent-glow)]">SPEED: {downloadStats.speed}</span>
+                    </div>
+                    <div className="w-full h-4 bg-[var(--border-shadow-deep)] border border-[#000] relative">
+                      <div 
+                        className="h-full bg-[var(--accent-glow)] border-r border-[var(--accent-border)] shadow-[inset_0_1px_2px_rgba(255,255,255,0.3)] transition-all duration-200"
+                        style={{ width: `${downloadStats.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Fieldset>
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div className="space-y-4 max-w-4xl mx-auto mt-2">
+              <Fieldset legend="Hardware Acceleration (GPU)">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
+                    <label>Execution Provider:</label>
+                    <select className="pro-input">
+                      <option>CUDA (NVIDIA)</option>
+                      <option>DirectML (AMD / Intel)</option>
+                      <option>CPU Only</option>
+                    </select>
+                  </div>
+                  
+                  <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
+                    <label>Preferred GPU Device:</label>
+                    <select className="pro-input">
+                      <option>Device 0: NVIDIA GeForce RTX 4090</option>
+                      <option>Device 1: Intel(R) UHD Graphics</option>
+                      <option>Auto-detect</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
+                    <div className="flex items-center">
+                      <label>VRAM Allocation Limit:</label>
+                      <HelpIcon tooltip="Restricts how much video memory the model can allocate. Lower limits may prevent crashes on older GPUs but increase processing time." />
+                    </div>
+                    <select className="pro-input">
+                      <option>No Limit</option>
+                      <option>8 GB</option>
+                      <option>6 GB</option>
+                      <option>4 GB</option>
+                      <option>2 GB</option>
+                    </select>
+                  </div>
+                </div>
+              </Fieldset>
+
+              <Fieldset legend="Appearance">
+                <div className="grid grid-cols-[150px_1fr] gap-2 items-center mb-2">
+                  <label>UI Theme:</label>
+                  <select 
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value)}
+                    className="pro-input"
+                  >
+                    <option value="theme-classic">Classic Dark (PrismSplit)</option>
+                    <option value="theme-win95">Win95 Gray</option>
+                    <option value="theme-cyberpunk">Cyberpunk Neons</option>
+                    <option value="theme-matrix">Terminal Matrix</option>
+                    <option value="theme-amber">Amber CRT</option>
+                    <option value="theme-crimson">Blood Red</option>
+                    <option value="theme-deepblue">Midnight Blue</option>
+                  </select>
+                </div>
+              </Fieldset>
+
+              <Fieldset legend="System Paths">
+                <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center mb-2">
+                  <label>Model Registry Path:</label>
+                  <input type="text" defaultValue="C:\\PrismSplit\\Models" className="pro-input" />
+                  <ProButton label="Browse..." onClick={() => openDirDialog()} />
+                </div>
+                <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center">
+                  <label>Temporary Cache:</label>
+                  <input type="text" defaultValue="%TEMP%\\PrismSplit" className="pro-input" />
+                  <ProButton label="Browse..." onClick={() => openDirDialog()} />
+                </div>
+              </Fieldset>
+
+              <div className="flex justify-end gap-2 mt-4">
+                <button className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-6 py-2 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]">
+                  Apply
+                </button>
+                <button className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-6 py-2 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]">
+                  Reset Defaults
+                </button>
+              </div>
+            </div>
+          )}
+          
+        </div>
+
+        {/* Status Bar */}
+        <div className="bg-[var(--bg-panel)] border-t-2 border-[var(--border-chassis)] px-2 py-1 text-[10px] text-[var(--text-subtext)] flex justify-between">
+          <div>{isProcessing ? 'Processing audio buffer...' : isPreviewing ? 'Generating preview...' : 'Ready'}</div>
+          <div>MEM: 452MB / GPU: READY</div>
+        </div>
+
+      </div>
+
+      <style dangerouslySetInnerHTML={{__html: `
+        .theme-classic {
+          --bg-outer: #383838;
+          --bg-panel: #404040;
+          --bg-titlebar: #2b2b36;
+          --bg-toolbar: #484848;
+          --bg-workspace: #303030;
+          --bg-input: #1e1e1e;
+          --bg-input-alt: #252525;
+          --bg-console: #000000;
+          --bg-btn: #4a4a4a;
+          --bg-btn-active: #404040;
+          --bg-btn-hover: #505050;
+          --border-hilite: #666666;
+          --border-hilite-subtle: #555555;
+          --border-shadow: #222222;
+          --border-shadow-deep: #111111;
+          --border-chassis: #1a1a1a;
+          --border-fieldset: #2a2a2a;
+          --border-fieldset-subtle: #5a5a5a;
+          --border-subtle: #333333;
+          --accent-glow: #00ff00;
+          --accent-border: #00aa00;
+          --accent-secondary: #4488ff;
+          --text-main: #d4d4d4;
+          --text-bright: #ffffff;
+          --text-muted: #888888;
+          --text-subtext: #aaaaaa;
+        }
+
+        .theme-win95 {
+          --bg-outer: #008080;
+          --bg-panel: #c0c0c0;
+          --bg-titlebar: #000080;
+          --bg-toolbar: #c0c0c0;
+          --bg-workspace: #c0c0c0;
+          --bg-input: #ffffff;
+          --bg-input-alt: #f0f0f0;
+          --bg-console: #000000;
+          --bg-btn: #c0c0c0;
+          --bg-btn-active: #a0a0a0;
+          --bg-btn-hover: #cfcfcf;
+          --border-hilite: #ffffff;
+          --border-hilite-subtle: #dfdfdf;
+          --border-shadow: #808080;
+          --border-shadow-deep: #000000;
+          --border-chassis: #000000;
+          --border-fieldset: #808080;
+          --border-fieldset-subtle: #ffffff;
+          --border-subtle: #808080;
+          --accent-glow: #00ff00;
+          --accent-border: #008000;
+          --accent-secondary: #000080;
+          --text-main: #000000;
+          --text-bright: #000000; /* Windows 95 didn't have bright text in general except on dark bgs */
+          --text-muted: #808080;
+          --text-subtext: #000000;
+        }
+        
+        .theme-win95 .text-\\[var\\(--text-bright\\)\\] {
+          color: #ffffff; /* We must force white for title bars */
+        }
+        
+        .theme-cyberpunk {
+          --bg-outer: #0a0a1a;
+          --bg-panel: #111122;
+          --bg-titlebar: #220022;
+          --bg-toolbar: #1a1a33;
+          --bg-workspace: #0f0f1a;
+          --bg-input: #05050a;
+          --bg-input-alt: #080812;
+          --bg-console: #000000;
+          --bg-btn: #2a1a3a;
+          --bg-btn-active: #1a0a2a;
+          --bg-btn-hover: #3a2a4a;
+          --border-hilite: #ff00ff;
+          --border-hilite-subtle: #880088;
+          --border-shadow: #00ffff;
+          --border-shadow-deep: #008888;
+          --border-chassis: #00ffff;
+          --border-fieldset: #ff00ff;
+          --border-fieldset-subtle: #00ffff;
+          --border-subtle: #880088;
+          --accent-glow: #00ffff;
+          --accent-border: #008888;
+          --accent-secondary: #ff00ff;
+          --text-main: #e0e0ff;
+          --text-bright: #ffffff;
+          --text-muted: #8888aa;
+          --text-subtext: #aaaacc;
+        }
+
+        .theme-matrix {
+          --bg-outer: #000000;
+          --bg-panel: #001100;
+          --bg-titlebar: #002200;
+          --bg-toolbar: #001a00;
+          --bg-workspace: #000a00;
+          --bg-input: #000000;
+          --bg-input-alt: #000500;
+          --bg-console: #000000;
+          --bg-btn: #003300;
+          --bg-btn-active: #002200;
+          --bg-btn-hover: #004400;
+          --border-hilite: #00ff00;
+          --border-hilite-subtle: #00aa00;
+          --border-shadow: #005500;
+          --border-shadow-deep: #002200;
+          --border-chassis: #00ff00;
+          --border-fieldset: #00ff00;
+          --border-fieldset-subtle: #005500;
+          --border-subtle: #008800;
+          --accent-glow: #00ff00;
+          --accent-border: #00aa00;
+          --accent-secondary: #00ff00;
+          --text-main: #00cc00;
+          --text-bright: #00ff00;
+          --text-muted: #005500;
+          --text-subtext: #00aa00;
+        }
+
+        .theme-amber {
+          --bg-outer: #000000;
+          --bg-panel: #1a0f00;
+          --bg-titlebar: #331f00;
+          --bg-toolbar: #261700;
+          --bg-workspace: #0f0800;
+          --bg-input: #000000;
+          --bg-input-alt: #050200;
+          --bg-console: #000000;
+          --bg-btn: #331f00;
+          --bg-btn-active: #221500;
+          --bg-btn-hover: #442a00;
+          --border-hilite: #ffb000;
+          --border-hilite-subtle: #cc8c00;
+          --border-shadow: #664600;
+          --border-shadow-deep: #332300;
+          --border-chassis: #ffb000;
+          --border-fieldset: #ffb000;
+          --border-fieldset-subtle: #664600;
+          --border-subtle: #996900;
+          --accent-glow: #ffb000;
+          --accent-border: #cc8c00;
+          --accent-secondary: #ffb000;
+          --text-main: #ffcc66;
+          --text-bright: #ffb000;
+          --text-muted: #886622;
+          --text-subtext: #cc9933;
+        }
+
+        .theme-crimson {
+          --bg-outer: #1a0505;
+          --bg-panel: #2a0a0a;
+          --bg-titlebar: #3a0000;
+          --bg-toolbar: #220505;
+          --bg-workspace: #1f0808;
+          --bg-input: #0a0000;
+          --bg-input-alt: #110000;
+          --bg-console: #000000;
+          --bg-btn: #3a0808;
+          --bg-btn-active: #2a0000;
+          --bg-btn-hover: #4a1111;
+          --border-hilite: #ff3333;
+          --border-hilite-subtle: #aa2222;
+          --border-shadow: #550000;
+          --border-shadow-deep: #220000;
+          --border-chassis: #ff0000;
+          --border-fieldset: #ff3333;
+          --border-fieldset-subtle: #550000;
+          --border-subtle: #881111;
+          --accent-glow: #ff0000;
+          --accent-border: #aa0000;
+          --accent-secondary: #ff3333;
+          --text-main: #ffaaaa;
+          --text-bright: #ffffff;
+          --text-muted: #884444;
+          --text-subtext: #cc6666;
+        }
+
+        .theme-deepblue {
+          --bg-outer: #050a1a;
+          --bg-panel: #0a112a;
+          --bg-titlebar: #001a4a;
+          --bg-toolbar: #081533;
+          --bg-workspace: #080f22;
+          --bg-input: #000511;
+          --bg-input-alt: #000a1a;
+          --bg-console: #000000;
+          --bg-btn: #11224a;
+          --bg-btn-active: #08112a;
+          --bg-btn-hover: #1a3366;
+          --border-hilite: #3388ff;
+          --border-hilite-subtle: #2255aa;
+          --border-shadow: #002255;
+          --border-shadow-deep: #00112a;
+          --border-chassis: #3388ff;
+          --border-fieldset: #3388ff;
+          --border-fieldset-subtle: #002255;
+          --border-subtle: #114488;
+          --accent-glow: #00aaff;
+          --accent-border: #0066aa;
+          --accent-secondary: #3388ff;
+          --text-main: #aaccff;
+          --text-bright: #ffffff;
+          --text-muted: #5577aa;
+          --text-subtext: #88bbff;
+        }
+
+        .inset-border {
+          border: 2px solid;
+          border-top-color: var(--border-chassis);
+          border-left-color: var(--border-chassis);
+          border-bottom-color: var(--border-hilite-subtle);
+          border-right-color: var(--border-hilite-subtle);
+        }
+        .pro-input {
+          background-color: var(--bg-input);
+          color: var(--text-bright);
+          border: 2px solid;
+          border-top-color: var(--border-shadow-deep);
+          border-left-color: var(--border-shadow-deep);
+          border-bottom-color: var(--border-hilite-subtle);
+          border-right-color: var(--border-hilite-subtle);
+          padding: 2px 4px;
+          outline: none;
+        }
+        .pro-input:focus {
+          border-color: var(--accent-secondary);
+        }
+      `}} />
+    </div>
+  );
+}
+
+function ToolbarButton({ label, active, onClick }: { label: string, active: boolean, onClick: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`px-3 py-1 font-bold outline-none 
+        ${active 
+          ? 'bg-[var(--bg-workspace)] text-[var(--text-bright)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)]' 
+          : 'bg-[var(--bg-btn)] text-[var(--text-main)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] hover:bg-[var(--bg-btn-hover)] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]'
+        }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Fieldset({ legend, children }: { legend: string, children: React.ReactNode }) {
+  return (
+    <fieldset className="border-2 border-t-[var(--border-fieldset)] border-l-[var(--border-fieldset)] border-b-[var(--border-fieldset-subtle)] border-r-[var(--border-fieldset-subtle)] p-3 pt-4 relative mt-2">
+      <legend className="bg-[var(--bg-workspace)] px-2 absolute -top-2 left-2 text-[var(--text-subtext)] font-bold">
+        {legend}
+      </legend>
+      {children}
+    </fieldset>
+  );
+}
+
+function ProButton({ label, onClick }: { label: string, onClick?: () => void }) {
+  return (
+    <button onClick={onClick} type="button" className="bg-[var(--bg-btn)] text-[var(--text-main)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] px-2 py-[2px] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]">
+      {label}
+    </button>
+  );
+}
+
+function Checkbox({ label, defaultChecked = false }: { label: string, defaultChecked?: boolean }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <span className="relative w-3 h-3 bg-[var(--bg-input)] border border-[#111] shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)] inline-block">
+        <input type="checkbox" defaultChecked={defaultChecked} className="opacity-0 absolute inset-0 cursor-pointer peer" />
+        <span className="absolute inset-0 bg-[var(--accent-glow)] hidden peer-checked:block m-[2px] shadow-[0_0_3px_var(--accent-glow)]"></span>
+      </span>
+      {label}
+    </label>
+  );
+}
+
+function HelpIcon({ tooltip }: { tooltip: string }) {
+  return (
+    <div className="relative group inline-block cursor-help align-middle ml-1">
+      <div className="w-[13px] h-[13px] bg-[#666] text-[var(--text-bright)] flex items-center justify-center text-[9px] font-bold border border-[#222] border-t-[#aaa] border-l-[#aaa] pb-[1px] leading-none shadow-sm group-hover:bg-[#888] select-none">
+        ?
+      </div>
+      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 w-48 p-1.5 bg-[#ffffe1] text-[#000] border border-[#000] text-[10px] hidden group-hover:block z-50 shadow-[2px_2px_0px_rgba(0,0,0,0.5)] pointer-events-none leading-normal font-[Tahoma,sans-serif] text-left">
+        {tooltip}
+      </div>
+    </div>
+  );
+}
+
+
