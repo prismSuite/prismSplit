@@ -70,8 +70,8 @@ impl RuntimeManager {
     }
 
     async fn install_dependencies(&self) -> Result<()> {
-        // In a real app, we would run: venv/bin/python -m pip install -r requirements.lock.txt
-        // For now we just mock success
+        // In a real app, we would run: venv/bin/python -m pip install ./engine
+        // This will use pyproject.toml automatically.
         Ok(())
     }
 }
