@@ -1,6 +1,9 @@
 // src-tauri/tests/model_registry.rs
+use prismsplit::download_manager::sha256_file;
 use prismsplit::model_registry::load_catalog_from_str;
 use prismsplit::models::{EngineHealth, SetupStatus};
+use std::fs;
+use tempfile::tempdir;
 
 #[test]
 fn setup_status_defaults_to_not_ready() {
@@ -45,4 +48,14 @@ fn catalog_parser_reads_single_karaoke_model() {
     let catalog = load_catalog_from_str(json).unwrap();
     assert_eq!(catalog.len(), 1);
     assert_eq!(catalog[0].id, "mdx_uvr_karaoke_1");
+}
+
+#[test]
+fn sha256_file_matches_known_content() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("sample.txt");
+    fs::write(&path, b"prismsplit").unwrap();
+
+    let hash = sha256_file(&path).unwrap();
+    assert_eq!(hash.len(), 64);
 }
