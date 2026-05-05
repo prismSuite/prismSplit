@@ -25,3 +25,15 @@ async fn doctor_reports_missing_runtime_before_setup() {
     assert!(!health.runtime_ready);
     assert_eq!(health.installed_model_count, 0);
 }
+
+#[tokio::test]
+async fn setup_creates_runtime_directories() {
+    let dir = tempdir().unwrap();
+    let manager = RuntimeManager::new(AppPaths::new(dir.path().to_path_buf()));
+
+    let status = manager.prepare().await.unwrap();
+
+    assert!(status
+        .completed_stages
+        .contains(&"create_directories".to_string()));
+}

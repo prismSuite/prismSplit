@@ -12,14 +12,36 @@ mod models;
 mod registry;
 mod runtime_manager;
 
+use app_paths::AppPaths;
+use models::{EngineHealth, SetupStatus};
 use registry::AgentRegistry;
+use runtime_manager::RuntimeManager;
 use serde_json::json;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 use tokio::sync::Mutex;
 
 struct AppState {
     registry: Arc<Mutex<AgentRegistry>>,
+    runtime_manager: RuntimeManager,
+}
+
+#[tauri::command]
+async fn get_engine_health(state: State<'_, AppState>) -> Result<EngineHealth, String> {
+    state
+        .runtime_manager
+        .doctor()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn prepare_engine(state: State<'_, AppState>) -> Result<SetupStatus, String> {
+    state
+        .runtime_manager
+        .prepare()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -79,23 +101,37 @@ async fn check_system() -> Result<String, String> {
 }
 
 fn main() {
-    let registry = Arc::new(Mutex::new(AgentRegistry::new()));
-
-    // In a full implementation, we'd spawn a task to discover agents
-    let reg_clone = registry.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut reg = reg_clone.lock().await;
-        let _ = reg.discover().await;
-    });
-
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState { registry })
+        .setup(|app| {
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to get app data dir");
+            let paths = AppPaths::new(app_data_dir);
+            let runtime_manager = RuntimeManager::new(paths);
+            let registry = Arc::new(Mutex::new(AgentRegistry::new()));
+
+            // In a full implementation, we'd spawn a task to discover agents
+            let reg_clone = registry.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut reg = reg_clone.lock().await;
+                let _ = reg.discover().await;
+            });
+
+            app.manage(AppState {
+                registry,
+                runtime_manager,
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_available_models,
             process_audio,
-            check_system
+            check_system,
+            get_engine_health,
+            prepare_engine
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
