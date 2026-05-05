@@ -124,7 +124,11 @@ fn main() {
                 .path()
                 .app_data_dir()
                 .expect("failed to get app data dir");
-            let paths = AppPaths::new(app_data_dir);
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .expect("failed to get resource dir");
+            let paths = AppPaths::new(app_data_dir, resource_dir);
             let runtime_manager = RuntimeManager::new(paths.clone());
             let model_registry = ModelRegistry::new(paths.models_dir.clone());
             let registry = Arc::new(Mutex::new(AgentRegistry::new()));

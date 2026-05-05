@@ -4,6 +4,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub struct AppPaths {
     pub root: PathBuf,
+    pub resource_dir: PathBuf,
     pub runtime_dir: PathBuf,
     pub python_dir: PathBuf,
     pub venv_dir: PathBuf,
@@ -17,7 +18,7 @@ pub struct AppPaths {
 }
 
 impl AppPaths {
-    pub fn new(root: PathBuf) -> Self {
+    pub fn new(root: PathBuf, resource_dir: PathBuf) -> Self {
         Self {
             runtime_dir: root.join("runtime"),
             python_dir: root.join("runtime").join("python"),
@@ -30,6 +31,7 @@ impl AppPaths {
             logs_dir: root.join("logs"),
             cache_dir: root.join("cache"),
             root,
+            resource_dir,
         }
     }
 }
