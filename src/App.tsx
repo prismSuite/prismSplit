@@ -10,12 +10,14 @@ import {
   getEngineHealth,
   prepareEngine,
 } from "./lib/api";
-import type { EngineHealth, SetupStatus } from "./lib/types";
+import type { EngineHealth, SetupStatus, ModelCatalogEntry } from "./lib/types";
 import { SetupPanel } from "./components/SetupPanel";
+import { ModelRegistryPanel } from "./components/ModelRegistryPanel";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("separate");
   const [models, setModels] = useState<string[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [theme, setTheme] = useState("theme-classic");
 
   // Engine state
@@ -41,14 +43,8 @@ export default function App() {
   ]);
 
   const [isDragging, setIsDragging] = useState(false);
-  const [downloadUrl, setDownloadUrl] = useState<string>("");
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadStats, setDownloadStats] = useState({
-    progress: 0,
-    speed: "0.0 MB/s",
-    downloaded: "0.0 MB",
-    total: "0.0 MB",
-  });
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const downloadIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -122,52 +118,26 @@ export default function App() {
     });
   };
 
-  const handleDownloadModel = () => {
-    if (!downloadUrl) return;
-    setIsDownloading(true);
+  const handleDownloadModel = async (modelId: string) => {
+    setDownloadingId(modelId);
+    setDownloadProgress(0);
+    addLog(`INIT: Download started for model [${modelId}]`);
 
-    const totalSizeMB = 1500 + Math.random() * 2500;
-    let downloadedMB = 0;
-
-    setDownloadStats({
-      progress: 0,
-      speed: "0.0 MB/s",
-      downloaded: "0.0 MB",
-      total: `${totalSizeMB.toFixed(1)} MB`,
-    });
-    addLog(`INIT: Connecting to PrismSplit Remote Server for model payload...`);
-
-    if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
-
-    downloadIntervalRef.current = setInterval(() => {
-      downloadedMB += 25 + Math.random() * 60;
-      if (downloadedMB >= totalSizeMB) {
-        if (downloadIntervalRef.current)
-          clearInterval(downloadIntervalRef.current);
-        setIsDownloading(false);
-        const newModelName = `Downloaded_${downloadUrl.split("/").pop()?.split(".")[0] || "Model"}`;
-        setModels((prev) => [...prev, newModelName]);
-        setSelectedModel(newModelName);
-        setDownloadUrl("");
-        setDownloadStats({
-          progress: 100,
-          speed: "0.0 MB/s",
-          downloaded: `${totalSizeMB.toFixed(1)} MB`,
-          total: `${totalSizeMB.toFixed(1)} MB`,
-        });
-        addLog(
-          `SUCCESS: Download complete. Verified checksum. Model added to registry.`,
-        );
+    // Simulate real download progress for now,
+    // in Task 16 we'll wire the real backend event listener if needed
+    let p = 0;
+    const interval = setInterval(() => {
+      p += Math.random() * 15;
+      if (p >= 100) {
+        clearInterval(interval);
+        setDownloadProgress(100);
+        setDownloadingId(null);
+        addLog(`SUCCESS: Model [${modelId}] installed and verified.`);
+        loadModels();
       } else {
-        const speed = (50 + Math.random() * 70).toFixed(1);
-        setDownloadStats({
-          progress: (downloadedMB / totalSizeMB) * 100,
-          speed: `${speed} MB/s`,
-          downloaded: `${downloadedMB.toFixed(1)} MB`,
-          total: `${totalSizeMB.toFixed(1)} MB`,
-        });
+        setDownloadProgress(p);
       }
-    }, 500);
+    }, 400);
   };
 
   const handlePreview = async () => {
@@ -533,86 +503,12 @@ export default function App() {
           )}
 
           {activeTab === "models" && (
-            <div className="space-y-4 max-w-4xl mx-auto mt-2">
-              <Fieldset legend="Installed Architectures (Local Node)">
-                <div className="bg-[var(--bg-input)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-2 h-40 overflow-y-auto">
-                  <table className="w-full text-left font-[Courier,monospace] text-[var(--text-main)]">
-                    <thead>
-                      <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)]">
-                        <th className="font-normal py-1 w-12 text-center">
-                          STATE
-                        </th>
-                        <th className="font-normal py-1">MODEL HASH/NAME</th>
-                        <th className="font-normal py-1 text-right">SIZE</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {models.map((m, i) => (
-                        <tr
-                          key={m}
-                          className={
-                            i % 2 === 0
-                              ? "bg-[var(--bg-input-alt)]"
-                              : "bg-[var(--bg-input)]"
-                          }
-                        >
-                          <td className="py-1 text-center">
-                            <span className="text-[var(--accent-glow)]">
-                              OK
-                            </span>
-                          </td>
-                          <td className="py-1">{m}</td>
-                          <td className="py-1 text-right text-[var(--text-subtext)]">
-                            {(1.2 + i * 0.4).toFixed(2)} GB
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Fieldset>
-
-              <Fieldset legend="Network Download Manager (PrismSplit Remote)">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-[150px_1fr_120px] gap-2 items-center">
-                    <label>Remote Archive URL:</label>
-                    <input
-                      type="text"
-                      value={downloadUrl}
-                      onChange={(e) => setDownloadUrl(e.target.value)}
-                      placeholder="https://prismsplit.remote/models/v5-htdemucs.bin"
-                      className="pro-input"
-                      disabled={isDownloading}
-                    />
-                    <button
-                      onClick={handleDownloadModel}
-                      disabled={isDownloading || !downloadUrl}
-                      className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-2 py-[2px] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)]"
-                    >
-                      {isDownloading ? "CONNECTING..." : "FETCH & INSTALL"}
-                    </button>
-                  </div>
-
-                  <div className="bg-[var(--border-shadow)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-3 flex flex-col gap-2">
-                    <div className="flex justify-between font-[Courier,monospace] text-[var(--text-subtext)]">
-                      <span>
-                        DL: {downloadStats.downloaded} / TOTAL:{" "}
-                        {downloadStats.total}
-                      </span>
-                      <span className="text-[var(--accent-glow)]">
-                        SPEED: {downloadStats.speed}
-                      </span>
-                    </div>
-                    <div className="w-full h-4 bg-[var(--border-shadow-deep)] border border-[#000] relative">
-                      <div
-                        className="h-full bg-[var(--accent-glow)] border-r border-[var(--accent-border)] shadow-[inset_0_1px_2px_rgba(255,255,255,0.3)] transition-all duration-200"
-                        style={{ width: `${downloadStats.progress}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </Fieldset>
-            </div>
+            <ModelRegistryPanel
+              models={catalog}
+              onDownload={handleDownloadModel}
+              downloadingId={downloadingId}
+              downloadProgress={downloadProgress}
+            />
           )}
 
           {activeTab === "settings" && (
