@@ -1,5 +1,6 @@
 // src-tauri/src/download_manager.rs
-use anyhow::Result;
+use anyhow::{bail, Result};
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, path::Path};
 
@@ -17,4 +18,21 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     }
 
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+pub async fn download_file(url: &str, destination: &Path) -> Result<()> {
+    let response = reqwest::get(url).await?;
+    if !response.status().is_success() {
+        bail!("Failed to download file: {}", response.status());
+    }
+
+    let mut file = File::create(destination)?;
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        std::io::copy(&mut chunk.as_ref(), &mut file)?;
+    }
+
+    Ok(())
 }

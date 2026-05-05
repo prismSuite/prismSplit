@@ -6,13 +6,13 @@
 mod agent;
 mod app_paths;
 mod download_manager;
-mod engine_bridge;
 mod model_registry;
 mod models;
 mod registry;
 mod runtime_manager;
 
 use app_paths::AppPaths;
+use model_registry::ModelRegistry;
 use models::{EngineHealth, SetupStatus};
 use registry::AgentRegistry;
 use runtime_manager::RuntimeManager;
@@ -24,6 +24,7 @@ use tokio::sync::Mutex;
 struct AppState {
     registry: Arc<Mutex<AgentRegistry>>,
     runtime_manager: RuntimeManager,
+    model_registry: ModelRegistry,
 }
 
 #[tauri::command]
@@ -110,7 +111,8 @@ fn main() {
                 .app_data_dir()
                 .expect("failed to get app data dir");
             let paths = AppPaths::new(app_data_dir);
-            let runtime_manager = RuntimeManager::new(paths);
+            let runtime_manager = RuntimeManager::new(paths.clone());
+            let model_registry = ModelRegistry::new(paths.models_dir.clone());
             let registry = Arc::new(Mutex::new(AgentRegistry::new()));
 
             // In a full implementation, we'd spawn a task to discover agents
@@ -123,6 +125,7 @@ fn main() {
             app.manage(AppState {
                 registry,
                 runtime_manager,
+                model_registry,
             });
             Ok(())
         })

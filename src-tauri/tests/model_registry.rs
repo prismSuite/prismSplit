@@ -59,3 +59,30 @@ fn sha256_file_matches_known_content() {
     let hash = sha256_file(&path).unwrap();
     assert_eq!(hash.len(), 64);
 }
+
+#[test]
+fn model_is_installed_when_target_file_exists() {
+    let dir = tempdir().unwrap();
+    let models_dir = dir.path().join("models");
+    std::fs::create_dir_all(&models_dir).unwrap();
+
+    let registry = prismsplit::model_registry::ModelRegistry::new(models_dir.clone());
+    let entry = prismsplit::models::ModelCatalogEntry {
+        id: "test".into(),
+        name: "Test".into(),
+        backend: "mdx".into(),
+        output_kind: "vocals".into(),
+        url: "".into(),
+        sha256: "".into(),
+        size_bytes: 0,
+        filename: "test_model.onnx".into(),
+        version: "1".into(),
+    };
+
+    assert!(!registry.is_model_installed(&entry));
+
+    let model_path = models_dir.join("test_model.onnx");
+    std::fs::write(&model_path, b"dummy").unwrap();
+
+    assert!(registry.is_model_installed(&entry));
+}
