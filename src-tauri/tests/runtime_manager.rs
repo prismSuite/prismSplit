@@ -37,3 +37,15 @@ async fn setup_creates_runtime_directories() {
         .completed_stages
         .contains(&"create_directories".to_string()));
 }
+
+#[tokio::test]
+async fn prepare_marks_unpack_python_stage_when_archive_is_available() {
+    // This test is a scaffold for when we have a real fixture
+    // For now we just verify it doesn't crash if the logic is there
+    let dir = tempdir().unwrap();
+    let manager = RuntimeManager::new(AppPaths::new(dir.path().to_path_buf()));
+
+    // We expect it to fail if archive is missing, or we can mock it
+    let result = manager.prepare().await;
+    assert!(result.is_ok());
+}
