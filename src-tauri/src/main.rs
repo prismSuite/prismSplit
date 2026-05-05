@@ -23,10 +23,13 @@ use std::sync::Arc;
 use tauri::{Manager, State};
 use tokio::sync::Mutex;
 
+use std::collections::HashMap;
+
 struct AppState {
     registry: Arc<Mutex<AgentRegistry>>,
     runtime_manager: RuntimeManager,
     model_registry: ModelRegistry,
+    active_jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
 }
 
 #[tauri::command]
@@ -45,6 +48,15 @@ async fn prepare_engine(state: State<'_, AppState>) -> Result<SetupStatus, Strin
         .prepare()
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cancel_job(state: State<'_, AppState>, job_id: String) -> Result<(), String> {
+    let mut jobs = state.active_jobs.lock().await;
+    if let Some(mut child) = jobs.remove(&job_id) {
+        child.kill().await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -124,10 +136,13 @@ fn main() {
                 let _ = reg.discover().await;
             });
 
+            let active_jobs = Arc::new(Mutex::new(HashMap::new()));
+
             app.manage(AppState {
                 registry,
                 runtime_manager,
                 model_registry,
+                active_jobs,
             });
             Ok(())
         })
@@ -136,7 +151,8 @@ fn main() {
             process_audio,
             check_system,
             get_engine_health,
-            prepare_engine
+            prepare_engine,
+            cancel_job
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
