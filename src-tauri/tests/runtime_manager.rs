@@ -49,3 +49,15 @@ async fn prepare_marks_unpack_python_stage_when_archive_is_available() {
     let result = manager.prepare().await;
     assert!(result.is_ok());
 }
+
+#[tokio::test]
+async fn prepare_reports_dependency_stage() {
+    let dir = tempdir().unwrap();
+    let manager = RuntimeManager::new(AppPaths::new(dir.path().to_path_buf()));
+
+    let status = manager.prepare().await.unwrap();
+
+    assert!(status
+        .completed_stages
+        .contains(&"install_dependencies".to_string()));
+}

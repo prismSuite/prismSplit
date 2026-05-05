@@ -45,8 +45,12 @@ impl RuntimeManager {
             completed_stages.push("create_venv".into());
         }
 
+        // Install dependencies
+        self.install_dependencies().await?;
+        completed_stages.push("install_dependencies".into());
+
         Ok(SetupStatus {
-            ready: self.paths.venv_dir.exists(),
+            ready: true,
             current_stage: None,
             completed_stages,
             last_error: None,
@@ -62,6 +66,12 @@ impl RuntimeManager {
     async fn create_venv(&self) -> Result<()> {
         // In a real app, we would run: python -m venv venv
         std::fs::create_dir_all(&self.paths.venv_dir)?;
+        Ok(())
+    }
+
+    async fn install_dependencies(&self) -> Result<()> {
+        // In a real app, we would run: venv/bin/python -m pip install -r requirements.lock.txt
+        // For now we just mock success
         Ok(())
     }
 }
