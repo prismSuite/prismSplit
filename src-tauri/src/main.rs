@@ -6,6 +6,7 @@
 mod agent;
 mod app_paths;
 mod download_manager;
+mod engine_bridge;
 mod model_registry;
 mod models;
 mod registry;
