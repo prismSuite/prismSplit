@@ -1,5 +1,6 @@
 // src-tauri/tests/runtime_manager.rs
 use prismsplit::app_paths::AppPaths;
+use prismsplit::runtime_manager::RuntimeManager;
 use tempfile::tempdir;
 
 #[test]
@@ -11,4 +12,16 @@ fn app_paths_create_expected_runtime_layout() {
     assert!(paths.python_dir.ends_with("python"));
     assert!(paths.venv_dir.ends_with("venv"));
     assert!(paths.models_dir.ends_with("models"));
+}
+
+#[tokio::test]
+async fn doctor_reports_missing_runtime_before_setup() {
+    let dir = tempdir().unwrap();
+    let paths = AppPaths::new(dir.path().to_path_buf());
+    let manager = RuntimeManager::new(paths);
+
+    let health = manager.doctor().await.unwrap();
+
+    assert!(!health.runtime_ready);
+    assert_eq!(health.installed_model_count, 0);
 }

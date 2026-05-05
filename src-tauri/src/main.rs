@@ -7,6 +7,7 @@ mod agent;
 mod app_paths;
 mod models;
 mod registry;
+mod runtime_manager;
 
 use registry::AgentRegistry;
 use serde_json::json;
