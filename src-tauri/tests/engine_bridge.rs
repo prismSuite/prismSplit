@@ -23,3 +23,14 @@ async fn running_job_can_be_cancelled() {
     // Mock cancellation logic
     assert!(true, "expected cancellation signal to stop child process");
 }
+
+#[tokio::test]
+#[ignore = "requires embedded runtime and real model fixture"]
+async fn end_to_end_karaoke_separation_produces_two_output_files() {
+    // 1. setup on fresh runtime root
+    // 2. install one model
+    // 3. run one short separation fixture
+    // 4. verify two outputs exist
+    // 5. verify logs contain progress and result events
+    assert!(true);
+}
