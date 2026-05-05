@@ -2,6 +2,7 @@
 use prismsplit::download_manager::sha256_file;
 use prismsplit::model_registry::load_catalog_from_str;
 use prismsplit::models::{EngineHealth, SetupStatus};
+use serde_json::json;
 use std::fs;
 use tempfile::tempdir;
 
@@ -28,6 +29,25 @@ fn engine_health_exposes_runtime_and_model_flags() {
 }
 
 #[test]
+fn engine_health_serializes_with_camel_case_keys() {
+    let health = EngineHealth {
+        runtime_ready: true,
+        dependencies_ready: true,
+        ffmpeg_ready: false,
+        model_catalog_ready: true,
+        installed_model_count: 1,
+        active_job_count: 0,
+    };
+
+    let value = serde_json::to_value(health).unwrap();
+
+    assert_eq!(value["runtimeReady"], json!(true));
+    assert_eq!(value["dependenciesReady"], json!(true));
+    assert_eq!(value["modelCatalogReady"], json!(true));
+    assert_eq!(value["installedModelCount"], json!(1));
+}
+
+#[test]
 fn catalog_parser_reads_single_karaoke_model() {
     let json = r#"
     [
@@ -35,17 +55,17 @@ fn catalog_parser_reads_single_karaoke_model() {
         "id": "mdx_uvr_karaoke_1",
         "name": "MDX Karaoke 1",
         "backend": "mdx",
-        "output_kind": "vocals_instrumental",
+        "outputKind": "vocals_instrumental",
         "url": "https://example.com/model.onnx",
         "sha256": "abc",
-        "size_bytes": 42,
+        "sizeBytes": 42,
         "filename": "model.onnx",
         "version": "1.0.0"
       }
     ]
     "#;
 
-    let catalog = load_catalog_from_str(json).unwrap();
+    let catalog = prismsplit::model_registry::load_catalog_from_str(json).unwrap();
     assert_eq!(catalog.len(), 1);
     assert_eq!(catalog[0].id, "mdx_uvr_karaoke_1");
 }
@@ -64,9 +84,11 @@ fn sha256_file_matches_known_content() {
 fn model_is_installed_when_target_file_exists() {
     let dir = tempdir().unwrap();
     let models_dir = dir.path().join("models");
+    let catalog_path = dir.path().join("catalog.json");
     std::fs::create_dir_all(&models_dir).unwrap();
+    std::fs::write(&catalog_path, "[]").unwrap();
 
-    let registry = prismsplit::model_registry::ModelRegistry::new(models_dir.clone());
+    let registry = prismsplit::model_registry::ModelRegistry::new(models_dir.clone(), catalog_path);
     let entry = prismsplit::models::ModelCatalogEntry {
         id: "test".into(),
         name: "Test".into(),

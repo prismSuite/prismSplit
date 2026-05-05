@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct SetupStatus {
     pub ready: bool,
     pub current_stage: Option<String>,
@@ -10,6 +11,7 @@ pub struct SetupStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EngineHealth {
     pub runtime_ready: bool,
     pub dependencies_ready: bool,
@@ -20,6 +22,7 @@ pub struct EngineHealth {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelCatalogEntry {
     pub id: String,
     pub name: String,
@@ -33,9 +36,19 @@ pub struct ModelCatalogEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeparationRequest {
     pub input_path: String,
     pub model_id: String,
     pub output_dir: String,
     pub format: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessAudioResponse {
+    pub job_id: String,
+    pub vocals_path: String,
+    pub instrumental_path: String,
+    pub backend: String,
 }

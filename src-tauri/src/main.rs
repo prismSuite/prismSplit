@@ -3,33 +3,28 @@
     windows_subsystem = "windows"
 )]
 
-mod agent;
 mod app_paths;
 mod download_manager;
 mod engine_bridge;
 mod job_manager;
 mod model_registry;
 mod models;
-mod registry;
 mod runtime_manager;
 
 use app_paths::AppPaths;
+use download_manager::{download_file, verify_sha256};
+use engine_bridge::EngineBridge;
 use model_registry::ModelRegistry;
-use models::{EngineHealth, SetupStatus};
-use registry::AgentRegistry;
+use models::{
+    EngineHealth, ModelCatalogEntry, ProcessAudioResponse, SeparationRequest, SetupStatus,
+};
 use runtime_manager::RuntimeManager;
-use serde_json::json;
 use std::sync::Arc;
 use tauri::{Manager, State};
-use tokio::sync::Mutex;
-
-use std::collections::HashMap;
 
 struct AppState {
-    registry: Arc<Mutex<AgentRegistry>>,
     runtime_manager: RuntimeManager,
-    model_registry: ModelRegistry,
-    active_jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
+    model_registry: Arc<ModelRegistry>,
 }
 
 #[tauri::command]
@@ -51,22 +46,57 @@ async fn prepare_engine(state: State<'_, AppState>) -> Result<SetupStatus, Strin
 }
 
 #[tauri::command]
-async fn cancel_job(state: State<'_, AppState>, job_id: String) -> Result<(), String> {
-    let mut jobs = state.active_jobs.lock().await;
-    if let Some(mut child) = jobs.remove(&job_id) {
-        child.kill().await.map_err(|e| e.to_string())?;
-    }
-    Ok(())
+async fn list_model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelCatalogEntry>, String> {
+    state
+        .model_registry
+        .load_catalog()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn get_available_models() -> Result<Vec<String>, String> {
-    // Mock response for frontend
-    Ok(vec![
-        "Demucs v4 (htdemucs)".into(),
-        "MDX-Net (UVR-MDX-NET-Inst_HQ_1)".into(),
-        "VR Architecture (UVR_v5_Vocal_Only)".into(),
-    ])
+async fn get_available_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    state
+        .model_registry
+        .load_catalog()
+        .map(|entries| entries.into_iter().map(|entry| entry.name).collect())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn download_model(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<ModelCatalogEntry, String> {
+    let entry = state
+        .model_registry
+        .get_entry(&model_id)
+        .map_err(|e| e.to_string())?;
+    state
+        .model_registry
+        .validate_downloadable(&entry)
+        .map_err(|e| e.to_string())?;
+
+    std::fs::create_dir_all(&state.model_registry.models_dir).map_err(|e| e.to_string())?;
+
+    let destination = state.model_registry.installed_model_path(&entry);
+    let temp_destination = destination.with_extension("download");
+
+    if let Err(e) = download_file(&entry.url, &temp_destination).await {
+        let _ = std::fs::remove_file(&temp_destination);
+        return Err(e.to_string());
+    }
+
+    if let Err(e) = verify_sha256(&temp_destination, &entry.sha256) {
+        let _ = std::fs::remove_file(&temp_destination);
+        return Err(e.to_string());
+    }
+
+    if let Err(e) = std::fs::rename(&temp_destination, &destination) {
+        let _ = std::fs::remove_file(&temp_destination);
+        return Err(e.to_string());
+    }
+
+    Ok(entry)
 }
 
 #[tauri::command]
@@ -75,44 +105,110 @@ async fn process_audio(
     file_path: String,
     model: String,
     output_dir: String,
-    quality: String,
-) -> Result<String, String> {
-    // In a real app, we would look up the stem_separation or gain_staging agent
-    let mut registry = state.registry.lock().await;
+    _quality: String,
+) -> Result<ProcessAudioResponse, String> {
+    let request = SeparationRequest {
+        input_path: file_path.clone(),
+        model_id: model.clone(),
+        output_dir: output_dir.clone(),
+        format: "wav".into(),
+    };
+    job_manager::validate_request(&request).map_err(|e| e.to_string())?;
 
-    // Simulate IPC call to external agent
-    println!(
-        "Processing audio: {} with model {} at quality {} to {}",
-        file_path, model, quality, output_dir
-    );
-
-    // Attempting to use a hypothetical "stem_separation" agent
-    if let Some(agent_arc) = registry.get_agent("stem_separation") {
-        let mut agent = agent_arc.lock().await;
-        // execute agent payload
-        let result = agent
-            .execute(
-                "separate",
-                json!({
-                    "input": file_path,
-                    "model": model,
-                    "output": output_dir,
-                    "quality": quality
-                }),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-
-        return Ok(format!("Success: {:?}", result));
+    let entry = state
+        .model_registry
+        .get_entry(&model)
+        .map_err(|e| e.to_string())?;
+    let model_path = state.model_registry.installed_model_path(&entry);
+    if !model_path.is_file() {
+        return Err(format!(
+            "Model `{}` is not installed yet. Download it from the Model Registry tab first.",
+            entry.name
+        ));
     }
 
-    // For the UI preview to work without real agents:
-    Ok("Procesamiento simulado en entorno de desarrollo. Para separacion real, ejecute la app compilada localmente.".into())
+    let python_exe = state.runtime_manager.paths().venv_python_executable();
+    let engine_script = state.runtime_manager.paths().installed_engine_script();
+    if !python_exe.is_file() {
+        return Err(format!(
+            "Engine runtime is not ready. Missing {}",
+            python_exe.display()
+        ));
+    }
+    if !engine_script.is_file() {
+        return Err(format!(
+            "Engine script is not ready. Missing {}",
+            engine_script.display()
+        ));
+    }
+
+    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
+
+    let bridge = EngineBridge::new(python_exe, engine_script);
+    let payload = serde_json::json!({
+        "job_id": "job-local",
+        "backend": entry.backend,
+        "input_path": file_path,
+        "model_path": model_path,
+        "output_dir": output_dir,
+    });
+
+    let (events, mut child) = bridge
+        .run_command_collect("separate", payload)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = child.wait().await;
+
+    let terminal = events
+        .last()
+        .ok_or_else(|| "Engine returned no events".to_string())?;
+
+    match terminal.event.as_str() {
+        "result" => {
+            let payload = terminal
+                .payload
+                .clone()
+                .ok_or_else(|| "Engine result did not include payload".to_string())?;
+            let vocals_path = payload
+                .get("vocals_path")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "Engine result missing vocals_path".to_string())?;
+            let instrumental_path = payload
+                .get("instrumental_path")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "Engine result missing instrumental_path".to_string())?;
+
+            Ok(ProcessAudioResponse {
+                job_id: terminal
+                    .job_id
+                    .clone()
+                    .unwrap_or_else(|| "job-local".into()),
+                vocals_path: vocals_path.into(),
+                instrumental_path: instrumental_path.into(),
+                backend: entry.backend,
+            })
+        }
+        "error" => Err(terminal
+            .message
+            .clone()
+            .unwrap_or_else(|| "Engine returned an unspecified error".into())),
+        other => Err(format!("Unexpected terminal engine event `{}`", other)),
+    }
 }
 
 #[tauri::command]
-async fn check_system() -> Result<String, String> {
-    Ok("Sistema Listo - PrismSplit".into())
+async fn check_system(state: State<'_, AppState>) -> Result<String, String> {
+    let health = state
+        .runtime_manager
+        .doctor()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if health.runtime_ready && health.dependencies_ready {
+        Ok("Sistema listo - PrismSplit".into())
+    } else {
+        Ok("Motor no preparado - ejecute Prepare Engine".into())
+    }
 }
 
 fn main() {
@@ -130,33 +226,25 @@ fn main() {
                 .expect("failed to get resource dir");
             let paths = AppPaths::new(app_data_dir, resource_dir);
             let runtime_manager = RuntimeManager::new(paths.clone());
-            let model_registry = ModelRegistry::new(paths.models_dir.clone());
-            let registry = Arc::new(Mutex::new(AgentRegistry::new()));
-
-            // In a full implementation, we'd spawn a task to discover agents
-            let reg_clone = registry.clone();
-            tauri::async_runtime::spawn(async move {
-                let mut reg = reg_clone.lock().await;
-                let _ = reg.discover().await;
-            });
-
-            let active_jobs = Arc::new(Mutex::new(HashMap::new()));
+            let model_registry = Arc::new(ModelRegistry::new(
+                paths.models_dir.clone(),
+                paths.manifest_catalog_path(),
+            ));
 
             app.manage(AppState {
-                registry,
                 runtime_manager,
                 model_registry,
-                active_jobs,
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_available_models,
+            list_model_catalog,
+            download_model,
             process_audio,
             check_system,
             get_engine_health,
-            prepare_engine,
-            cancel_job
+            prepare_engine
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -33,3 +33,10 @@ export type SeparationRequest = {
   outputDir: string;
   format: string;
 };
+
+export type ProcessAudioResponse = {
+  jobId: string;
+  vocalsPath: string;
+  instrumentalPath: string;
+  backend: string;
+};

@@ -29,7 +29,7 @@
     "resources": [
       "../engine/python",
       "../engine/models",
-      "../engine/requirements.lock.txt"
+      "../engine/pyproject.toml"
     ]
   }
 }

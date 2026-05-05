@@ -3,10 +3,10 @@
     "id": "mdx_uvr_karaoke_2",
     "name": "MDX Karaoke 2",
     "backend": "mdx",
-    "output_kind": "vocals_instrumental",
+    "outputKind": "vocals_instrumental",
     "url": "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR_MDXNET_KARA_2.onnx",
-    "sha256": "replace-with-real-sha256",
-    "size_bytes": 0,
+    "sha256": "bf32e15105a09c0f7dddd2b67346146334d6f3ecb399ed7638eba2ab07cbf5f4",
+    "sizeBytes": 52786726,
     "filename": "UVR_MDXNET_KARA_2.onnx",
     "version": "1.0.0"
   }

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   processAudio,
-  getAvailableModels,
   minimizeWindow,
   toggleMaximizeWindow,
   closeWindow,
@@ -9,8 +8,15 @@ import {
   openDirDialog,
   getEngineHealth,
   prepareEngine,
+  listModelCatalog,
+  downloadModel,
 } from "./lib/api";
-import type { EngineHealth, SetupStatus, ModelCatalogEntry } from "./lib/types";
+import type {
+  EngineHealth,
+  SetupStatus,
+  ModelCatalogEntry,
+  ProcessAudioResponse,
+} from "./lib/types";
 import { SetupPanel } from "./components/SetupPanel";
 import { ModelRegistryPanel } from "./components/ModelRegistryPanel";
 import { SeparationPanel } from "./components/SeparationPanel";
@@ -25,7 +31,6 @@ import {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("separate");
-  const [models, setModels] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [theme, setTheme] = useState("theme-classic");
 
@@ -44,7 +49,6 @@ export default function App() {
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [log, setLog] = useState<string[]>([
     "PrismSplit Core Sub-System V-0.1.0-alpha loaded.",
     "System ready.",
@@ -53,7 +57,6 @@ export default function App() {
 
   const [isDragging, setIsDragging] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const downloadIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -81,8 +84,8 @@ export default function App() {
     try {
       const h = await getEngineHealth();
       setHealth(h);
-      if (h.runtimeReady && h.dependenciesReady) {
-        loadModels();
+      if (h.runtimeReady && h.dependenciesReady && h.modelCatalogReady) {
+        await loadCatalog();
       }
     } catch (e) {
       addLog(`ERROR: Health check failed: ${e}`);
@@ -91,16 +94,17 @@ export default function App() {
     }
   };
 
-  const loadModels = () => {
-    getAvailableModels()
-      .then((m) => {
-        setModels(m);
-        if (m.length > 0) setSelectedModel(m[0]);
-        addLog(`Models loaded: ${m.length} found in registry.`);
-      })
-      .catch((e) => {
-        addLog(`ERROR: Failed to load models [${e}]`);
-      });
+  const loadCatalog = async () => {
+    try {
+      const entries = await listModelCatalog();
+      setCatalog(entries);
+      if (entries.length > 0) {
+        setSelectedModel((prev) => prev || entries[0].id);
+      }
+      addLog(`Models loaded: ${entries.length} found in registry.`);
+    } catch (e) {
+      addLog(`ERROR: Failed to load model catalog [${e}]`);
+    }
   };
 
   const handlePrepareEngine = async () => {
@@ -129,42 +133,23 @@ export default function App() {
 
   const handleDownloadModel = async (modelId: string) => {
     setDownloadingId(modelId);
-    setDownloadProgress(0);
-    addLog(`INIT: Download started for model [${modelId}]`);
+    addLog(
+      `INIT: Download started for model [${modelId}]... this may take a while.`,
+    );
 
-    // Simulate real download progress for now,
-    // in Task 16 we'll wire the real backend event listener if needed
-    let p = 0;
-    const interval = setInterval(() => {
-      p += Math.random() * 15;
-      if (p >= 100) {
-        clearInterval(interval);
-        setDownloadProgress(100);
-        setDownloadingId(null);
-        addLog(`SUCCESS: Model [${modelId}] installed and verified.`);
-        loadModels();
-      } else {
-        setDownloadProgress(p);
-      }
-    }, 400);
+    try {
+      const model = await downloadModel(modelId);
+      addLog(`SUCCESS: Model [${model.name}] installed and verified.`);
+      await loadCatalog();
+    } catch (e) {
+      addLog(`ERROR: Model download failed [${e}]`);
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const handlePreview = async () => {
-    if (!inputFile) {
-      addLog("WARN: Null input file exception. Operation aborted.");
-      return;
-    }
-    setIsPreviewing(true);
-    addLog(
-      `INIT: Generating 10s preview for <${inputFile.split("/").pop() || inputFile}>`,
-    );
-
-    if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
-
-    previewTimeoutRef.current = setTimeout(() => {
-      setIsPreviewing(false);
-      addLog(`SUCCESS: Preview generated and loaded into buffer.`);
-    }, 2000);
+    addLog("ERROR: Preview generation is not implemented in Release 1.");
   };
 
   const handleProcess = async () => {
@@ -173,38 +158,21 @@ export default function App() {
       return;
     }
     setIsProcessing(true);
-    setProgress(5);
     addLog(
-      `INIT: Process task created for <${inputFile.split("/").pop() || inputFile}>`,
+      `INIT: Process task created for <${inputFile.split("/").pop() || inputFile}>. Waiting for engine...`,
     );
 
-    if (processIntervalRef.current) clearInterval(processIntervalRef.current);
-
-    // Simulate progress
-    processIntervalRef.current = setInterval(() => {
-      setProgress((p) => {
-        if (p >= 95) {
-          if (processIntervalRef.current)
-            clearInterval(processIntervalRef.current);
-          return 95;
-        }
-        return p + Math.floor(Math.random() * 8);
-      });
-    }, 500);
-
     try {
-      const result = await processAudio(
+      const result: ProcessAudioResponse = await processAudio(
         inputFile,
         selectedModel,
         outputDir || "C:\\AudioData\\Output",
         quality,
       );
-      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
-      setProgress(100);
-      addLog(`SUCCESS: ${result}`);
+      addLog(
+        `SUCCESS: Separation complete via ${result.backend}. Vocals: ${result.vocalsPath} | Instrumental: ${result.instrumentalPath}`,
+      );
     } catch (e: any) {
-      if (processIntervalRef.current) clearInterval(processIntervalRef.current);
-      setProgress(0);
       addLog(`ERR: Execution halted: ${e}`);
     } finally {
       setIsProcessing(false);
@@ -389,9 +357,9 @@ export default function App() {
                         onChange={(e) => setSelectedModel(e.target.value)}
                         className="pro-input w-full"
                       >
-                        {models.map((m) => (
-                          <option key={m} value={m}>
-                            {m}
+                        {catalog.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}
                           </option>
                         ))}
                       </select>
@@ -455,7 +423,7 @@ export default function App() {
                 }}
                 onRun={handleProcess}
                 isProcessing={isProcessing}
-                progress={progress}
+                progress={0}
               />
 
               {/* Output Console */}
@@ -481,7 +449,7 @@ export default function App() {
               models={catalog}
               onDownload={handleDownloadModel}
               downloadingId={downloadingId}
-              downloadProgress={downloadProgress}
+              downloadProgress={0}
             />
           )}
 

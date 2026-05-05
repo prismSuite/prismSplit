@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { EngineHealth, SetupStatus, ModelCatalogEntry } from "./types";
+import type {
+  EngineHealth,
+  ModelCatalogEntry,
+  ProcessAudioResponse,
+  SetupStatus,
+} from "./types";
 
 // Helper for check
 export const isTauri = () => {
@@ -73,7 +78,7 @@ export async function processAudio(
   model: string,
   outputDir: string,
   quality: string,
-): Promise<string> {
+): Promise<ProcessAudioResponse> {
   if (isTauri()) {
     return await invoke("process_audio", {
       filePath,
@@ -82,14 +87,7 @@ export async function processAudio(
       quality,
     });
   } else {
-    // Mock for web preview
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(
-          `(Mock) Procesamiento completado de:\n${filePath}\nusando ${model} a calidad ${quality}.\nResultados en ${outputDir}`,
-        );
-      }, 3000);
-    });
+    throw new Error("Real audio processing is only available inside Tauri.");
   }
 }
 
@@ -99,6 +97,24 @@ export async function getAvailableModels(): Promise<string[]> {
   } else {
     return ["Demucs v4 (htdemucs)", "MDX-Net (UVR-MDX-NET)", "VR Architecture"];
   }
+}
+
+export async function listModelCatalog(): Promise<ModelCatalogEntry[]> {
+  if (isTauri()) {
+    return await invoke("list_model_catalog");
+  }
+
+  return [];
+}
+
+export async function downloadModel(
+  modelId: string,
+): Promise<ModelCatalogEntry> {
+  if (isTauri()) {
+    return await invoke("download_model", { modelId });
+  }
+
+  throw new Error("Model downloads are only available inside Tauri.");
 }
 
 export async function getEngineHealth(): Promise<EngineHealth> {
