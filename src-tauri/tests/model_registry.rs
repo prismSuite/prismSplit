@@ -1,4 +1,5 @@
 // src-tauri/tests/model_registry.rs
+use prismsplit::model_registry::load_catalog_from_str;
 use prismsplit::models::{EngineHealth, SetupStatus};
 
 #[test]
@@ -21,4 +22,27 @@ fn engine_health_exposes_runtime_and_model_flags() {
 
     assert_eq!(health.installed_model_count, 0);
     assert!(!health.ffmpeg_ready);
+}
+
+#[test]
+fn catalog_parser_reads_single_karaoke_model() {
+    let json = r#"
+    [
+      {
+        "id": "mdx_uvr_karaoke_1",
+        "name": "MDX Karaoke 1",
+        "backend": "mdx",
+        "output_kind": "vocals_instrumental",
+        "url": "https://example.com/model.onnx",
+        "sha256": "abc",
+        "size_bytes": 42,
+        "filename": "model.onnx",
+        "version": "1.0.0"
+      }
+    ]
+    "#;
+
+    let catalog = load_catalog_from_str(json).unwrap();
+    assert_eq!(catalog.len(), 1);
+    assert_eq!(catalog[0].id, "mdx_uvr_karaoke_1");
 }

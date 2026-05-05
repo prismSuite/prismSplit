@@ -5,6 +5,7 @@
 
 mod agent;
 mod app_paths;
+mod model_registry;
 mod models;
 mod registry;
 mod runtime_manager;
