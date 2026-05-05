@@ -1,18 +1,35 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { processAudio, getAvailableModels, minimizeWindow, toggleMaximizeWindow, closeWindow, openFileDialog, openDirDialog } from './lib/api';
+import React, { useState, useEffect, useRef } from "react";
+import {
+  processAudio,
+  getAvailableModels,
+  minimizeWindow,
+  toggleMaximizeWindow,
+  closeWindow,
+  openFileDialog,
+  openDirDialog,
+  getEngineHealth,
+  prepareEngine,
+} from "./lib/api";
+import type { EngineHealth, SetupStatus } from "./lib/types";
+import { SetupPanel } from "./components/SetupPanel";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('separate');
+  const [activeTab, setActiveTab] = useState("separate");
   const [models, setModels] = useState<string[]>([]);
-  const [theme, setTheme] = useState('theme-classic');
-  
+  const [theme, setTheme] = useState("theme-classic");
+
+  // Engine state
+  const [health, setHealth] = useState<EngineHealth | null>(null);
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
+
   // Form state
-  const [inputFile, setInputFile] = useState<string>('');
-  const [outputDir, setOutputDir] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [quality, setQuality] = useState<string>('Normal');
-  const [exportFormat, setExportFormat] = useState<string>('WAV');
-  
+  const [inputFile, setInputFile] = useState<string>("");
+  const [outputDir, setOutputDir] = useState<string>("");
+  const [selectedModel, setSelectedModel] = useState<string>("");
+  const [quality, setQuality] = useState<string>("Normal");
+  const [exportFormat, setExportFormat] = useState<string>("WAV");
+
   // Processing state
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -20,12 +37,18 @@ export default function App() {
   const [log, setLog] = useState<string[]>([
     "PrismSplit Core Sub-System V-0.1.0-alpha loaded.",
     "System ready.",
-    "Initializing hardware scan..."
+    "Initializing hardware scan...",
   ]);
 
-  const [downloadUrl, setDownloadUrl] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string>("");
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadStats, setDownloadStats] = useState({ progress: 0, speed: '0.0 MB/s', downloaded: '0.0 MB', total: '0.0 MB' });
+  const [downloadStats, setDownloadStats] = useState({
+    progress: 0,
+    speed: "0.0 MB/s",
+    downloaded: "0.0 MB",
+    total: "0.0 MB",
+  });
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const downloadIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -33,64 +56,115 @@ export default function App() {
   const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
 
   useEffect(() => {
     return () => {
-      if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
+      if (downloadIntervalRef.current)
+        clearInterval(downloadIntervalRef.current);
       if (processIntervalRef.current) clearInterval(processIntervalRef.current);
       if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
     };
   }, []);
 
   useEffect(() => {
-    getAvailableModels().then(m => {
-      setModels(m);
-      if (m.length > 0) setSelectedModel(m[0]);
-      addLog(`Models loaded: ${m.length} found in registry.`);
-    }).catch(e => {
-        addLog(`ERROR: Failed to load models [${e}]`);
-    });
+    refreshHealth();
   }, []);
 
+  const refreshHealth = async () => {
+    try {
+      const h = await getEngineHealth();
+      setHealth(h);
+      if (h.runtimeReady && h.dependenciesReady) {
+        loadModels();
+      }
+    } catch (e) {
+      addLog(`ERROR: Health check failed: ${e}`);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const loadModels = () => {
+    getAvailableModels()
+      .then((m) => {
+        setModels(m);
+        if (m.length > 0) setSelectedModel(m[0]);
+        addLog(`Models loaded: ${m.length} found in registry.`);
+      })
+      .catch((e) => {
+        addLog(`ERROR: Failed to load models [${e}]`);
+      });
+  };
+
+  const handlePrepareEngine = async () => {
+    try {
+      const status = await prepareEngine();
+      setSetupStatus(status);
+      if (status.ready) {
+        await refreshHealth();
+      }
+    } catch (e: any) {
+      addLog(`ERROR: Setup failed: ${e}`);
+    }
+  };
+
   const addLog = (msg: string) => {
-    setLog(prev => {
-      const newLogs = [...prev, `[${new Date().toLocaleTimeString('en-US', { hour12: false })}] ${msg}`];
-      return newLogs.length > 500 ? newLogs.slice(newLogs.length - 500) : newLogs;
+    setLog((prev) => {
+      const newLogs = [
+        ...prev,
+        `[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ${msg}`,
+      ];
+      return newLogs.length > 500
+        ? newLogs.slice(newLogs.length - 500)
+        : newLogs;
     });
   };
 
   const handleDownloadModel = () => {
     if (!downloadUrl) return;
     setIsDownloading(true);
-    
+
     const totalSizeMB = 1500 + Math.random() * 2500;
     let downloadedMB = 0;
-    
-    setDownloadStats({ progress: 0, speed: '0.0 MB/s', downloaded: '0.0 MB', total: `${totalSizeMB.toFixed(1)} MB` });
+
+    setDownloadStats({
+      progress: 0,
+      speed: "0.0 MB/s",
+      downloaded: "0.0 MB",
+      total: `${totalSizeMB.toFixed(1)} MB`,
+    });
     addLog(`INIT: Connecting to PrismSplit Remote Server for model payload...`);
-    
+
     if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
-    
+
     downloadIntervalRef.current = setInterval(() => {
       downloadedMB += 25 + Math.random() * 60;
       if (downloadedMB >= totalSizeMB) {
-        if (downloadIntervalRef.current) clearInterval(downloadIntervalRef.current);
+        if (downloadIntervalRef.current)
+          clearInterval(downloadIntervalRef.current);
         setIsDownloading(false);
-        const newModelName = `Downloaded_${downloadUrl.split('/').pop()?.split('.')[0] || 'Model'}`;
-        setModels(prev => [...prev, newModelName]);
+        const newModelName = `Downloaded_${downloadUrl.split("/").pop()?.split(".")[0] || "Model"}`;
+        setModels((prev) => [...prev, newModelName]);
         setSelectedModel(newModelName);
-        setDownloadUrl('');
-        setDownloadStats({ progress: 100, speed: '0.0 MB/s', downloaded: `${totalSizeMB.toFixed(1)} MB`, total: `${totalSizeMB.toFixed(1)} MB` });
-        addLog(`SUCCESS: Download complete. Verified checksum. Model added to registry.`);
+        setDownloadUrl("");
+        setDownloadStats({
+          progress: 100,
+          speed: "0.0 MB/s",
+          downloaded: `${totalSizeMB.toFixed(1)} MB`,
+          total: `${totalSizeMB.toFixed(1)} MB`,
+        });
+        addLog(
+          `SUCCESS: Download complete. Verified checksum. Model added to registry.`,
+        );
       } else {
         const speed = (50 + Math.random() * 70).toFixed(1);
         setDownloadStats({
           progress: (downloadedMB / totalSizeMB) * 100,
           speed: `${speed} MB/s`,
           downloaded: `${downloadedMB.toFixed(1)} MB`,
-          total: `${totalSizeMB.toFixed(1)} MB`
+          total: `${totalSizeMB.toFixed(1)} MB`,
         });
       }
     }, 500);
@@ -102,10 +176,12 @@ export default function App() {
       return;
     }
     setIsPreviewing(true);
-    addLog(`INIT: Generating 10s preview for <${inputFile.split('/').pop() || inputFile}>`);
-    
+    addLog(
+      `INIT: Generating 10s preview for <${inputFile.split("/").pop() || inputFile}>`,
+    );
+
     if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current);
-    
+
     previewTimeoutRef.current = setTimeout(() => {
       setIsPreviewing(false);
       addLog(`SUCCESS: Preview generated and loaded into buffer.`);
@@ -119,15 +195,18 @@ export default function App() {
     }
     setIsProcessing(true);
     setProgress(5);
-    addLog(`INIT: Process task created for <${inputFile.split('/').pop() || inputFile}>`);
-    
+    addLog(
+      `INIT: Process task created for <${inputFile.split("/").pop() || inputFile}>`,
+    );
+
     if (processIntervalRef.current) clearInterval(processIntervalRef.current);
-    
+
     // Simulate progress
     processIntervalRef.current = setInterval(() => {
-      setProgress(p => {
+      setProgress((p) => {
         if (p >= 95) {
-          if (processIntervalRef.current) clearInterval(processIntervalRef.current);
+          if (processIntervalRef.current)
+            clearInterval(processIntervalRef.current);
           return 95;
         }
         return p + Math.floor(Math.random() * 8);
@@ -136,10 +215,10 @@ export default function App() {
 
     try {
       const result = await processAudio(
-        inputFile, 
-        selectedModel, 
-        outputDir || 'C:\\AudioData\\Output', 
-        quality
+        inputFile,
+        selectedModel,
+        outputDir || "C:\\AudioData\\Output",
+        quality,
       );
       if (processIntervalRef.current) clearInterval(processIntervalRef.current);
       setProgress(100);
@@ -153,63 +232,117 @@ export default function App() {
     }
   };
 
-  return (
-    <div className={`flex h-screen bg-[var(--bg-outer)] text-[var(--text-main)] font-[Tahoma,sans-serif] text-xs select-none p-1 ${theme}`}>
+  // Conditional view: Setup if engine not ready
+  if (isInitializing) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[var(--bg-outer)] text-white">
+        <div className="animate-pulse">PRISMSPLIT_CORE_BOOTSTRAP...</div>
+      </div>
+    );
+  }
 
+  if (!health?.runtimeReady || !health?.dependenciesReady) {
+    return (
+      <div className={`flex h-screen bg-[var(--bg-outer)] p-1 ${theme}`}>
+        <div className="flex-1 bg-[var(--bg-panel)] border-2 border-[var(--border-chassis)] flex flex-col overflow-hidden">
+          <div className="bg-[var(--bg-titlebar)] p-2 font-bold text-[var(--text-bright)]">
+            PRISMSPLIT ENGINE SETUP
+          </div>
+          <div className="flex-1 overflow-y-auto bg-[var(--bg-workspace)]">
+            <SetupPanel
+              health={health}
+              setupStatus={setupStatus}
+              onPrepare={handlePrepareEngine}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`flex h-screen bg-[var(--bg-outer)] text-[var(--text-main)] font-[Tahoma,sans-serif] text-xs select-none p-1 ${theme}`}
+    >
       {/* Main Window Frame */}
       <div className="flex-1 flex flex-col bg-[var(--bg-panel)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-chassis)] border-r-[var(--border-chassis)] shadow-lg">
-        
         {/* Title Bar */}
-        <div data-tauri-drag-region className="bg-[var(--bg-titlebar)] border-b-2 border-[var(--border-chassis)] px-2 py-1 flex items-center justify-between shadow-sm select-none cursor-default">
-          <div data-tauri-drag-region className="font-bold text-[var(--text-bright)] flex items-center gap-2">
+        <div
+          data-tauri-drag-region
+          className="bg-[var(--bg-titlebar)] border-b-2 border-[var(--border-chassis)] px-2 py-1 flex items-center justify-between shadow-sm select-none cursor-default"
+        >
+          <div
+            data-tauri-drag-region
+            className="font-bold text-[var(--text-bright)] flex items-center gap-2"
+          >
             <div className="w-3 h-3 bg-[var(--accent-secondary)] border border-[#111111] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] pointer-events-none"></div>
-            <span className="pointer-events-none">PRISMSPLIT STEM EXTRACTOR</span>
+            <span className="pointer-events-none">
+              PRISMSPLIT STEM EXTRACTOR
+            </span>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-[10px] text-[var(--text-muted)] pointer-events-none">v0.1.0-alpha x64</div>
+            <div className="text-[10px] text-[var(--text-muted)] pointer-events-none">
+              v0.1.0-alpha x64
+            </div>
             <div className="flex items-center gap-1">
-              <button onClick={minimizeWindow} className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]">_</button>
-              <button onClick={toggleMaximizeWindow} className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]">□</button>
-              <button onClick={closeWindow} className="w-5 h-5 flex items-center justify-center bg-[#880000] border border-[#330000] hover:bg-[#aa0000] text-[#ffffff] active:bg-[#660000]">X</button>
+              <button
+                onClick={minimizeWindow}
+                className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]"
+              >
+                _
+              </button>
+              <button
+                onClick={toggleMaximizeWindow}
+                className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]"
+              >
+                □
+              </button>
+              <button
+                onClick={closeWindow}
+                className="w-5 h-5 flex items-center justify-center bg-[#880000] border border-[#330000] hover:bg-[#aa0000] text-[#ffffff] active:bg-[#660000]"
+              >
+                X
+              </button>
             </div>
           </div>
         </div>
 
         {/* Toolbar */}
         <div className="bg-[var(--bg-toolbar)] border-b-2 border-t-[var(--border-hilite)] border-[#222222] p-1 flex gap-1">
-          <ToolbarButton 
-            active={activeTab === 'separate'} 
-            onClick={() => setActiveTab('separate')}
-            label="Extraction" 
+          <ToolbarButton
+            active={activeTab === "separate"}
+            onClick={() => setActiveTab("separate")}
+            label="Extraction"
           />
-          <ToolbarButton 
-            active={activeTab === 'train'} 
-            onClick={() => setActiveTab('train')}
-            label="Training Mode" 
+          <ToolbarButton
+            active={activeTab === "train"}
+            onClick={() => setActiveTab("train")}
+            label="Training Mode"
           />
-          <ToolbarButton 
-            active={activeTab === 'models'} 
-            onClick={() => setActiveTab('models')}
-            label="Model Registry" 
+          <ToolbarButton
+            active={activeTab === "models"}
+            onClick={() => setActiveTab("models")}
+            label="Model Registry"
           />
-          <ToolbarButton 
-            active={activeTab === 'settings'} 
-            onClick={() => setActiveTab('settings')}
-            label="System Config" 
+          <ToolbarButton
+            active={activeTab === "settings"}
+            onClick={() => setActiveTab("settings")}
+            label="System Config"
           />
         </div>
 
         {/* Workspace */}
         <div className="flex-1 p-2 bg-[var(--bg-workspace)] overflow-y-auto inset-border">
-          
-          {activeTab === 'separate' && (
+          {activeTab === "separate" && (
             <div className="space-y-4 max-w-4xl mx-auto">
-              
               {/* I/O Section */}
               <Fieldset legend="I/O Configuration">
-                <div 
-                  className={`grid grid-cols-[100px_1fr_80px] gap-2 items-center mb-2 p-2 transition-all border-2 border-dashed ${isDragging ? 'border-[var(--accent-glow)] bg-[var(--bg-toolbar)]' : 'border-transparent'}`}
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                <div
+                  className={`grid grid-cols-[100px_1fr_80px] gap-2 items-center mb-2 p-2 transition-all border-2 border-dashed ${isDragging ? "border-[var(--accent-glow)] bg-[var(--bg-toolbar)]" : "border-transparent"}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={(e) => {
                     e.preventDefault();
@@ -224,37 +357,43 @@ export default function App() {
                   }}
                 >
                   <label>Input Source:</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={inputFile}
-                    onChange={e => setInputFile(e.target.value)}
+                    onChange={(e) => setInputFile(e.target.value)}
                     className="pro-input"
                     placeholder="Drag & Drop audio file here, or Browse..."
                   />
-                  <ProButton label="Browse..." onClick={async () => {
-                    const res = await openFileDialog();
-                    if (res) {
-                      setInputFile(res);
-                      addLog(`FILE LOADED: ${res}`);
-                    }
-                  }} />
+                  <ProButton
+                    label="Browse..."
+                    onClick={async () => {
+                      const res = await openFileDialog();
+                      if (res) {
+                        setInputFile(res);
+                        addLog(`FILE LOADED: ${res}`);
+                      }
+                    }}
+                  />
                 </div>
                 <div className="grid grid-cols-[100px_1fr_80px] gap-2 items-center">
                   <label>Output Dir:</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={outputDir}
-                    onChange={e => setOutputDir(e.target.value)}
+                    onChange={(e) => setOutputDir(e.target.value)}
                     className="pro-input"
                     placeholder="Same as input directory"
                   />
-                  <ProButton label="Browse..." onClick={async () => {
-                    const res = await openDirDialog();
-                    if (res) {
-                      setOutputDir(res);
-                      addLog(`DIR SELECTED: ${res}`);
-                    }
-                  }} />
+                  <ProButton
+                    label="Browse..."
+                    onClick={async () => {
+                      const res = await openDirDialog();
+                      if (res) {
+                        setOutputDir(res);
+                        addLog(`DIR SELECTED: ${res}`);
+                      }
+                    }}
+                  />
                 </div>
               </Fieldset>
 
@@ -263,14 +402,18 @@ export default function App() {
                 <Fieldset legend="Engine Parameters">
                   <div className="space-y-3">
                     <div>
-                      <label className="block mb-1">Architecture / Weights:</label>
-                      <select 
+                      <label className="block mb-1">
+                        Architecture / Weights:
+                      </label>
+                      <select
                         value={selectedModel}
-                        onChange={e => setSelectedModel(e.target.value)}
+                        onChange={(e) => setSelectedModel(e.target.value)}
                         className="pro-input w-full"
                       >
-                        {models.map(m => (
-                          <option key={m} value={m}>{m}</option>
+                        {models.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -278,9 +421,9 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block mb-1">Export Format:</label>
-                        <select 
+                        <select
                           value={exportFormat}
-                          onChange={e => setExportFormat(e.target.value)}
+                          onChange={(e) => setExportFormat(e.target.value)}
                           className="pro-input w-full"
                         >
                           <option>WAV (32-bit float)</option>
@@ -294,9 +437,9 @@ export default function App() {
                           <label>Compute Profile:</label>
                           <HelpIcon tooltip="Fast: CPU only. Normal: Basic GPU acceleration. High Quality: High overlap to reduce artifacts. Extreme: Max settings, heavy VRAM usage." />
                         </div>
-                        <select 
+                        <select
                           value={quality}
-                          onChange={e => setQuality(e.target.value)}
+                          onChange={(e) => setQuality(e.target.value)}
                           className="pro-input w-full"
                         >
                           <option>Fast (CPU)</option>
@@ -312,7 +455,10 @@ export default function App() {
                 {/* Advanced Operations */}
                 <Fieldset legend="Advanced">
                   <div className="space-y-2">
-                    <Checkbox label="Invert Spectrogram (Subtract vocals)" defaultChecked />
+                    <Checkbox
+                      label="Invert Spectrogram (Subtract vocals)"
+                      defaultChecked
+                    />
                     <Checkbox label="Enable TTA (Test-Time Augmentation)" />
                     <Checkbox label="Shift pitch before processing" />
                     <Checkbox label="Post-process masking" />
@@ -322,25 +468,27 @@ export default function App() {
 
               {/* Execution */}
               <div className="mt-4 flex gap-4">
-                <button 
+                <button
                   onClick={handleProcess}
                   disabled={isProcessing || isPreviewing || !inputFile}
-                  className={`font-bold py-3 px-8 outline-none transition-all ${isProcessing ? 'border-2 border-[var(--accent-glow)] text-[var(--accent-glow)] shadow-[inset_0_0_8px_var(--accent-glow),0_0_8px_var(--accent-glow)] bg-[var(--bg-panel)]' : 'bg-[var(--bg-btn)] text-[var(--text-bright)] active:bg-[var(--bg-panel)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]'}`}
+                  className={`font-bold py-3 px-8 outline-none transition-all ${isProcessing ? "border-2 border-[var(--accent-glow)] text-[var(--accent-glow)] shadow-[inset_0_0_8px_var(--accent-glow),0_0_8px_var(--accent-glow)] bg-[var(--bg-panel)]" : "bg-[var(--bg-btn)] text-[var(--text-bright)] active:bg-[var(--bg-panel)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]"}`}
                 >
-                  {isProcessing ? 'EXTRACTING...' : 'START EXTRACTION'}
+                  {isProcessing ? "EXTRACTING..." : "START EXTRACTION"}
                 </button>
-                <button 
+                <button
                   onClick={handlePreview}
                   disabled={isProcessing || isPreviewing || !inputFile}
-                  className={`font-bold py-3 px-6 outline-none transition-all ${isPreviewing ? 'border-2 border-[#ffaa00] text-[#ffaa00] shadow-[inset_0_0_8px_#ffaa00,0_0_8px_#ffaa00] bg-[var(--bg-panel)]' : 'bg-[var(--bg-btn)] text-[var(--text-bright)] active:bg-[var(--bg-panel)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]'}`}
+                  className={`font-bold py-3 px-6 outline-none transition-all ${isPreviewing ? "border-2 border-[#ffaa00] text-[#ffaa00] shadow-[inset_0_0_8px_#ffaa00,0_0_8px_#ffaa00] bg-[var(--bg-panel)]" : "bg-[var(--bg-btn)] text-[var(--text-bright)] active:bg-[var(--bg-panel)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]"}`}
                 >
                   PREVIEW (10s)
                 </button>
-                
+
                 <div className="flex-1 flex flex-col justify-center bg-[var(--bg-input-alt)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-2 relative">
-                  <div className="absolute top-1 left-2 text-[9px] text-[#666]">PROGRESS</div>
+                  <div className="absolute top-1 left-2 text-[9px] text-[#666]">
+                    PROGRESS
+                  </div>
                   <div className="w-full h-4 bg-[var(--border-shadow-deep)] border border-[#000] mt-1 relative overflow-hidden">
-                    <div 
+                    <div
                       className="absolute top-0 left-0 h-full bg-[var(--accent-glow)] transition-none border-r border-[var(--accent-border)] shadow-[inset_0_2px_4px_rgba(255,255,255,0.4)]"
                       style={{ width: `${progress}%` }}
                     />
@@ -354,7 +502,10 @@ export default function App() {
               {/* Output Console */}
               <Fieldset legend="System Log">
                 <div className="flex justify-end mb-1">
-                  <button onClick={() => setLog([])} className="bg-[var(--bg-btn)] text-[var(--text-main)] text-[9px] px-2 py-0.5 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]">
+                  <button
+                    onClick={() => setLog([])}
+                    className="bg-[var(--bg-btn)] text-[var(--text-main)] text-[9px] px-2 py-0.5 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]"
+                  >
                     CLEAR LOG
                   </button>
                 </div>
@@ -365,36 +516,55 @@ export default function App() {
                   <div ref={logEndRef} />
                 </div>
               </Fieldset>
-
             </div>
           )}
 
-          {activeTab === 'train' && (
+          {activeTab === "train" && (
             <div className="text-center mt-10 text-[var(--text-muted)]">
-              <div className="text-xl font-bold mb-2 text-[var(--text-subtext)]">MODULE NOT LOADED</div>
-              <p>Training engine requires manual PyTorch environment configuration.</p>
+              <div className="text-xl font-bold mb-2 text-[var(--text-subtext)]">
+                MODULE NOT LOADED
+              </div>
+              <p>
+                Training engine requires manual PyTorch environment
+                configuration.
+              </p>
               <p>Check the console for dependency errors.</p>
             </div>
           )}
 
-          {activeTab === 'models' && (
+          {activeTab === "models" && (
             <div className="space-y-4 max-w-4xl mx-auto mt-2">
               <Fieldset legend="Installed Architectures (Local Node)">
                 <div className="bg-[var(--bg-input)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-2 h-40 overflow-y-auto">
                   <table className="w-full text-left font-[Courier,monospace] text-[var(--text-main)]">
                     <thead>
                       <tr className="border-b border-[var(--border-subtle)] text-[var(--text-muted)]">
-                        <th className="font-normal py-1 w-12 text-center">STATE</th>
+                        <th className="font-normal py-1 w-12 text-center">
+                          STATE
+                        </th>
                         <th className="font-normal py-1">MODEL HASH/NAME</th>
                         <th className="font-normal py-1 text-right">SIZE</th>
                       </tr>
                     </thead>
                     <tbody>
                       {models.map((m, i) => (
-                        <tr key={m} className={i % 2 === 0 ? "bg-[var(--bg-input-alt)]" : "bg-[var(--bg-input)]"}>
-                          <td className="py-1 text-center"><span className="text-[var(--accent-glow)]">OK</span></td>
+                        <tr
+                          key={m}
+                          className={
+                            i % 2 === 0
+                              ? "bg-[var(--bg-input-alt)]"
+                              : "bg-[var(--bg-input)]"
+                          }
+                        >
+                          <td className="py-1 text-center">
+                            <span className="text-[var(--accent-glow)]">
+                              OK
+                            </span>
+                          </td>
                           <td className="py-1">{m}</td>
-                          <td className="py-1 text-right text-[var(--text-subtext)]">{(1.2 + i * 0.4).toFixed(2)} GB</td>
+                          <td className="py-1 text-right text-[var(--text-subtext)]">
+                            {(1.2 + i * 0.4).toFixed(2)} GB
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -406,30 +576,35 @@ export default function App() {
                 <div className="space-y-4">
                   <div className="grid grid-cols-[150px_1fr_120px] gap-2 items-center">
                     <label>Remote Archive URL:</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={downloadUrl}
-                      onChange={e => setDownloadUrl(e.target.value)}
-                      placeholder="https://prismsplit.remote/models/v5-htdemucs.bin" 
-                      className="pro-input" 
+                      onChange={(e) => setDownloadUrl(e.target.value)}
+                      placeholder="https://prismsplit.remote/models/v5-htdemucs.bin"
+                      className="pro-input"
                       disabled={isDownloading}
                     />
-                    <button 
+                    <button
                       onClick={handleDownloadModel}
                       disabled={isDownloading || !downloadUrl}
                       className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-2 py-[2px] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)] disabled:text-[var(--text-muted)] disabled:bg-[var(--bg-outer)]"
                     >
-                      {isDownloading ? 'CONNECTING...' : 'FETCH & INSTALL'}
+                      {isDownloading ? "CONNECTING..." : "FETCH & INSTALL"}
                     </button>
                   </div>
-                  
+
                   <div className="bg-[var(--border-shadow)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-3 flex flex-col gap-2">
                     <div className="flex justify-between font-[Courier,monospace] text-[var(--text-subtext)]">
-                      <span>DL: {downloadStats.downloaded} / TOTAL: {downloadStats.total}</span>
-                      <span className="text-[var(--accent-glow)]">SPEED: {downloadStats.speed}</span>
+                      <span>
+                        DL: {downloadStats.downloaded} / TOTAL:{" "}
+                        {downloadStats.total}
+                      </span>
+                      <span className="text-[var(--accent-glow)]">
+                        SPEED: {downloadStats.speed}
+                      </span>
                     </div>
                     <div className="w-full h-4 bg-[var(--border-shadow-deep)] border border-[#000] relative">
-                      <div 
+                      <div
                         className="h-full bg-[var(--accent-glow)] border-r border-[var(--accent-border)] shadow-[inset_0_1px_2px_rgba(255,255,255,0.3)] transition-all duration-200"
                         style={{ width: `${downloadStats.progress}%` }}
                       />
@@ -440,7 +615,7 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === 'settings' && (
+          {activeTab === "settings" && (
             <div className="space-y-4 max-w-4xl mx-auto mt-2">
               <Fieldset legend="Hardware Acceleration (GPU)">
                 <div className="space-y-4">
@@ -452,7 +627,7 @@ export default function App() {
                       <option>CPU Only</option>
                     </select>
                   </div>
-                  
+
                   <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
                     <label>Preferred GPU Device:</label>
                     <select className="pro-input">
@@ -481,12 +656,14 @@ export default function App() {
               <Fieldset legend="Appearance">
                 <div className="grid grid-cols-[150px_1fr] gap-2 items-center mb-2">
                   <label>UI Theme:</label>
-                  <select 
+                  <select
                     value={theme}
                     onChange={(e) => setTheme(e.target.value)}
                     className="pro-input"
                   >
-                    <option value="theme-classic">Classic Dark (PrismSplit)</option>
+                    <option value="theme-classic">
+                      Classic Dark (PrismSplit)
+                    </option>
                     <option value="theme-win95">Win95 Gray</option>
                     <option value="theme-cyberpunk">Cyberpunk Neons</option>
                     <option value="theme-matrix">Terminal Matrix</option>
@@ -500,13 +677,27 @@ export default function App() {
               <Fieldset legend="System Paths">
                 <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center mb-2">
                   <label>Model Registry Path:</label>
-                  <input type="text" defaultValue="C:\\PrismSplit\\Models" className="pro-input" />
-                  <ProButton label="Browse..." onClick={() => openDirDialog()} />
+                  <input
+                    type="text"
+                    defaultValue="C:\\PrismSplit\\Models"
+                    className="pro-input"
+                  />
+                  <ProButton
+                    label="Browse..."
+                    onClick={() => openDirDialog()}
+                  />
                 </div>
                 <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center">
                   <label>Temporary Cache:</label>
-                  <input type="text" defaultValue="%TEMP%\\PrismSplit" className="pro-input" />
-                  <ProButton label="Browse..." onClick={() => openDirDialog()} />
+                  <input
+                    type="text"
+                    defaultValue="%TEMP%\\PrismSplit"
+                    className="pro-input"
+                  />
+                  <ProButton
+                    label="Browse..."
+                    onClick={() => openDirDialog()}
+                  />
                 </div>
               </Fieldset>
 
@@ -520,18 +711,24 @@ export default function App() {
               </div>
             </div>
           )}
-          
         </div>
 
         {/* Status Bar */}
         <div className="bg-[var(--bg-panel)] border-t-2 border-[var(--border-chassis)] px-2 py-1 text-[10px] text-[var(--text-subtext)] flex justify-between">
-          <div>{isProcessing ? 'Processing audio buffer...' : isPreviewing ? 'Generating preview...' : 'Ready'}</div>
+          <div>
+            {isProcessing
+              ? "Processing audio buffer..."
+              : isPreviewing
+                ? "Generating preview..."
+                : "Ready"}
+          </div>
           <div>MEM: 452MB / GPU: READY</div>
         </div>
-
       </div>
 
-      <style dangerouslySetInnerHTML={{__html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .theme-classic {
           --bg-outer: #383838;
           --bg-panel: #404040;
@@ -589,11 +786,11 @@ export default function App() {
           --text-muted: #808080;
           --text-subtext: #000000;
         }
-        
+
         .theme-win95 .text-\\[var\\(--text-bright\\)\\] {
           color: #ffffff; /* We must force white for title bars */
         }
-        
+
         .theme-cyberpunk {
           --bg-outer: #0a0a1a;
           --bg-panel: #111122;
@@ -760,19 +957,30 @@ export default function App() {
         .pro-input:focus {
           border-color: var(--accent-secondary);
         }
-      `}} />
+      `,
+        }}
+      />
     </div>
   );
 }
 
-function ToolbarButton({ label, active, onClick }: { label: string, active: boolean, onClick: () => void }) {
+function ToolbarButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
-    <button 
+    <button
       onClick={onClick}
-      className={`px-3 py-1 font-bold outline-none 
-        ${active 
-          ? 'bg-[var(--bg-workspace)] text-[var(--text-bright)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)]' 
-          : 'bg-[var(--bg-btn)] text-[var(--text-main)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] hover:bg-[var(--bg-btn-hover)] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]'
+      className={`px-3 py-1 font-bold outline-none
+        ${
+          active
+            ? "bg-[var(--bg-workspace)] text-[var(--text-bright)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)]"
+            : "bg-[var(--bg-btn)] text-[var(--text-main)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] hover:bg-[var(--bg-btn-hover)] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]"
         }`}
     >
       {label}
@@ -780,7 +988,13 @@ function ToolbarButton({ label, active, onClick }: { label: string, active: bool
   );
 }
 
-function Fieldset({ legend, children }: { legend: string, children: React.ReactNode }) {
+function Fieldset({
+  legend,
+  children,
+}: {
+  legend: string;
+  children: React.ReactNode;
+}) {
   return (
     <fieldset className="border-2 border-t-[var(--border-fieldset)] border-l-[var(--border-fieldset)] border-b-[var(--border-fieldset-subtle)] border-r-[var(--border-fieldset-subtle)] p-3 pt-4 relative mt-2">
       <legend className="bg-[var(--bg-workspace)] px-2 absolute -top-2 left-2 text-[var(--text-subtext)] font-bold">
@@ -791,19 +1005,39 @@ function Fieldset({ legend, children }: { legend: string, children: React.ReactN
   );
 }
 
-function ProButton({ label, onClick }: { label: string, onClick?: () => void }) {
+function ProButton({
+  label,
+  onClick,
+}: {
+  label: string;
+  onClick?: () => void;
+}) {
   return (
-    <button onClick={onClick} type="button" className="bg-[var(--bg-btn)] text-[var(--text-main)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] px-2 py-[2px] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]">
+    <button
+      onClick={onClick}
+      type="button"
+      className="bg-[var(--bg-btn)] text-[var(--text-main)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow)] border-r-[var(--border-shadow)] px-2 py-[2px] active:bg-[var(--bg-panel)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite-subtle)] active:border-r-[var(--border-hilite-subtle)]"
+    >
       {label}
     </button>
   );
 }
 
-function Checkbox({ label, defaultChecked = false }: { label: string, defaultChecked?: boolean }) {
+function Checkbox({
+  label,
+  defaultChecked = false,
+}: {
+  label: string;
+  defaultChecked?: boolean;
+}) {
   return (
     <label className="flex items-center gap-2 cursor-pointer">
       <span className="relative w-3 h-3 bg-[var(--bg-input)] border border-[#111] shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)] inline-block">
-        <input type="checkbox" defaultChecked={defaultChecked} className="opacity-0 absolute inset-0 cursor-pointer peer" />
+        <input
+          type="checkbox"
+          defaultChecked={defaultChecked}
+          className="opacity-0 absolute inset-0 cursor-pointer peer"
+        />
         <span className="absolute inset-0 bg-[var(--accent-glow)] hidden peer-checked:block m-[2px] shadow-[0_0_3px_var(--accent-glow)]"></span>
       </span>
       {label}
@@ -823,5 +1057,3 @@ function HelpIcon({ tooltip }: { tooltip: string }) {
     </div>
   );
 }
-
-
