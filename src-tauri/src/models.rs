@@ -33,6 +33,9 @@ pub struct ModelCatalogEntry {
     pub size_bytes: u64,
     pub filename: String,
     pub version: String,
+    #[serde(default)]
+    pub is_installed: bool,
+    pub local_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,4 +54,11 @@ pub struct ProcessAudioResponse {
     pub vocals_path: String,
     pub instrumental_path: String,
     pub backend: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgressEvent {
+    pub model_id: String,
+    pub progress: f32,
 }

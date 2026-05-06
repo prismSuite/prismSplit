@@ -9,7 +9,20 @@ type Props = {
 };
 
 export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
-  const isPreparing = setupStatus && !setupStatus.ready && setupStatus.currentStage;
+  const [localIsPreparing, setLocalIsPreparing] = React.useState(false);
+  const isPreparing =
+    localIsPreparing ||
+    (setupStatus && !setupStatus.ready && setupStatus.currentStage);
+
+  const handlePrepare = async () => {
+    if (isPreparing) return;
+    setLocalIsPreparing(true);
+    try {
+      await onPrepare();
+    } finally {
+      setLocalIsPreparing(false);
+    }
+  };
 
   return (
     <section className="setup-panel p-4 max-w-2xl mx-auto space-y-6">
@@ -26,12 +39,26 @@ export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
         </p>
 
         <div className="bg-[var(--bg-input)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-4 mb-6 font-[Courier,monospace] text-xs">
-          <h3 className="text-[var(--text-muted)] mb-2 uppercase tracking-widest">Health Check Report:</h3>
+          <h3 className="text-[var(--text-muted)] mb-2 uppercase tracking-widest">
+            Health Check Report:
+          </h3>
           <ul className="space-y-1">
-            <HealthItem label="Runtime Sub-System" ready={health?.runtimeReady} />
-            <HealthItem label="Dependency Registry" ready={health?.dependenciesReady} />
-            <HealthItem label="FFmpeg Binary Bridge" ready={health?.ffmpegReady} />
-            <HealthItem label="Model Catalog Sync" ready={health?.modelCatalogReady} />
+            <HealthItem
+              label="Runtime Sub-System"
+              ready={health?.runtimeReady}
+            />
+            <HealthItem
+              label="Dependency Registry"
+              ready={health?.dependenciesReady}
+            />
+            <HealthItem
+              label="FFmpeg Binary Bridge"
+              ready={health?.ffmpegReady}
+            />
+            <HealthItem
+              label="Model Catalog Sync"
+              ready={health?.modelCatalogReady}
+            />
           </ul>
         </div>
 
@@ -44,7 +71,7 @@ export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
 
         <div className="flex flex-col gap-4">
           <button
-            onClick={() => void onPrepare()}
+            onClick={handlePrepare}
             disabled={!!isPreparing}
             className={`font-bold py-4 px-8 border-2 transition-all ${
               isPreparing
@@ -64,7 +91,9 @@ export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
               <div className="w-full h-2 bg-[var(--bg-input)] border border-[#000] relative overflow-hidden">
                 <div
                   className="absolute top-0 left-0 h-full bg-[var(--accent-secondary)] transition-all duration-500 shadow-[0_0_8px_var(--accent-secondary)]"
-                  style={{ width: `${(setupStatus.completedStages.length / 8) * 100}%` }}
+                  style={{
+                    width: `${(setupStatus.completedStages.length / 8) * 100}%`,
+                  }}
                 />
               </div>
               <div className="text-[9px] text-[var(--accent-secondary)] animate-pulse">

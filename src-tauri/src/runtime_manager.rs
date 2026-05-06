@@ -1,18 +1,23 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
+use tokio::sync::Mutex;
 
 use crate::app_paths::AppPaths;
 use crate::models::{EngineHealth, SetupStatus};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RuntimeManager {
     paths: AppPaths,
+    prepare_lock: Mutex<()>,
 }
 
 impl RuntimeManager {
     pub fn new(paths: AppPaths) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            prepare_lock: Mutex::new(()),
+        }
     }
 
     pub fn paths(&self) -> &AppPaths {
@@ -43,6 +48,7 @@ impl RuntimeManager {
     }
 
     pub async fn prepare(&self) -> Result<SetupStatus> {
+        let _lock = self.prepare_lock.lock().await;
         let mut completed_stages = Vec::new();
 
         self.ensure_layout()?;
@@ -135,16 +141,25 @@ impl RuntimeManager {
             );
         }
 
-        Self::copy_dir_recursive(&source_python_dir, &self.paths.installed_engine_python_dir())?;
+        Self::copy_dir_recursive(
+            &source_python_dir,
+            &self.paths.installed_engine_python_dir(),
+        )?;
         Self::copy_dir_recursive(&source_models_dir, &self.paths.engine_dir.join("models"))?;
 
         if source_pyproject.is_file() {
-            std::fs::copy(source_pyproject, self.paths.engine_dir.join("pyproject.toml"))?;
+            std::fs::copy(
+                source_pyproject,
+                self.paths.engine_dir.join("pyproject.toml"),
+            )?;
         }
 
         let source_catalog = source_models_dir.join("catalog.json");
         if !source_catalog.is_file() {
-            bail!("catalog.json was not found in {}", source_models_dir.display());
+            bail!(
+                "catalog.json was not found in {}",
+                source_models_dir.display()
+            );
         }
         std::fs::copy(source_catalog, self.paths.manifest_catalog_path())?;
 
@@ -203,7 +218,12 @@ impl RuntimeManager {
             .arg(&self.paths.engine_dir)
             .status()
             .await
-            .with_context(|| format!("Failed to install engine dependencies with {}", venv_python.display()))?;
+            .with_context(|| {
+                format!(
+                    "Failed to install engine dependencies with {}",
+                    venv_python.display()
+                )
+            })?;
 
         if !status.success() {
             bail!("Failed to install PrismSplit engine dependencies");

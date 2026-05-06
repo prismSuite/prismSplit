@@ -134,3 +134,17 @@ export async function prepareEngine(): Promise<SetupStatus> {
     lastError: null,
   };
 }
+
+export async function syncUvrCatalog(): Promise<number> {
+  if (isTauri()) {
+    return await invoke("sync_uvr_catalog");
+  }
+  return 0;
+}
+
+export async function scanLocalModels(path: String): Promise<number> {
+  if (isTauri()) {
+    return await invoke("scan_local_models", { path });
+  }
+  return 0;
+}

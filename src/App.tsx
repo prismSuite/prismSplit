@@ -10,12 +10,16 @@ import {
   prepareEngine,
   listModelCatalog,
   downloadModel,
+  syncUvrCatalog,
+  scanLocalModels,
 } from "./lib/api";
+import { listen } from "@tauri-apps/api/event";
 import type {
   EngineHealth,
   SetupStatus,
   ModelCatalogEntry,
   ProcessAudioResponse,
+  DownloadProgressEvent,
 } from "./lib/types";
 import { SetupPanel } from "./components/SetupPanel";
 import { ModelRegistryPanel } from "./components/ModelRegistryPanel";
@@ -57,11 +61,25 @@ export default function App() {
 
   const [isDragging, setIsDragging] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number>(0);
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const downloadIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const processIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const previewTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen<DownloadProgressEvent>(
+      "download_progress",
+      (event) => {
+        setDownloadProgress(event.payload.progress);
+      },
+    );
+
+    return () => {
+      unlisten.then((u) => u());
+    };
+  }, []);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -133,6 +151,7 @@ export default function App() {
 
   const handleDownloadModel = async (modelId: string) => {
     setDownloadingId(modelId);
+    setDownloadProgress(0);
     addLog(
       `INIT: Download started for model [${modelId}]... this may take a while.`,
     );
@@ -145,6 +164,36 @@ export default function App() {
       addLog(`ERROR: Model download failed [${e}]`);
     } finally {
       setDownloadingId(null);
+      setDownloadProgress(0);
+    }
+  };
+
+  const handleSyncCatalog = async () => {
+    addLog("INIT: Synchronizing model catalog with UVR servers...");
+    try {
+      const added = await syncUvrCatalog();
+      addLog(
+        `SUCCESS: Catalog synchronized. ${added} new models added to registry.`,
+      );
+      await loadCatalog();
+    } catch (e) {
+      addLog(`ERROR: Catalog sync failed [${e}]`);
+    }
+  };
+
+  const handleScanModels = async () => {
+    const path = await openDirDialog();
+    if (!path) return;
+
+    addLog(`INIT: Scanning directory [${path}] for known audio models...`);
+    try {
+      const added = await scanLocalModels(path);
+      addLog(
+        `SUCCESS: Scan complete. ${added} new local models identified and registered.`,
+      );
+      await loadCatalog();
+    } catch (e) {
+      addLog(`ERROR: Scan failed [${e}]`);
     }
   };
 
@@ -407,8 +456,10 @@ export default function App() {
             <ModelRegistryPanel
               models={catalog}
               onDownload={handleDownloadModel}
+              onSync={handleSyncCatalog}
+              onScan={handleScanModels}
               downloadingId={downloadingId}
-              downloadProgress={0}
+              downloadProgress={downloadProgress}
             />
           )}
 

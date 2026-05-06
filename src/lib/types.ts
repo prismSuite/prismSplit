@@ -40,3 +40,8 @@ export type ProcessAudioResponse = {
   instrumentalPath: string;
   backend: string;
 };
+
+export type DownloadProgressEvent = {
+  modelId: string;
+  progress: number;
+};

@@ -18,9 +18,24 @@ impl ModelRegistry {
 
     pub fn load_catalog(&self) -> Result<Vec<ModelCatalogEntry>> {
         let contents = std::fs::read_to_string(&self.catalog_path).with_context(|| {
-            format!("Failed to read model catalog from {}", self.catalog_path.display())
+            format!(
+                "Failed to read model catalog from {}",
+                self.catalog_path.display()
+            )
         })?;
-        load_catalog_from_str(&contents)
+        let mut entries: Vec<ModelCatalogEntry> = serde_json::from_str(&contents)?;
+
+        for entry in &mut entries {
+            if let Some(local_path) = &entry.local_path {
+                if Path::new(local_path).is_file() {
+                    entry.is_installed = true;
+                }
+            } else if self.is_model_installed(entry) {
+                entry.is_installed = true;
+            }
+        }
+
+        Ok(entries)
     }
 
     pub fn get_entry(&self, model_id: &str) -> Result<ModelCatalogEntry> {
@@ -43,6 +58,17 @@ impl ModelRegistry {
             bail!("Model `{}` does not define a download URL", entry.id);
         }
 
+        Ok(())
+    }
+
+    pub fn save_catalog(&self, catalog: &[ModelCatalogEntry]) -> Result<()> {
+        let contents = serde_json::to_string_pretty(catalog)?;
+        std::fs::write(&self.catalog_path, contents).with_context(|| {
+            format!(
+                "Failed to write model catalog to {}",
+                self.catalog_path.display()
+            )
+        })?;
         Ok(())
     }
 }

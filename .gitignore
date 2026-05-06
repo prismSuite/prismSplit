@@ -23,3 +23,7 @@ venv/
 
 # Tauri
 src-tauri/gen/
+GEMINI.MD
+AGENTS.md
+.gemini/
+.claude/
