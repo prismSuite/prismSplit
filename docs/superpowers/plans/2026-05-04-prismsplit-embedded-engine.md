@@ -22,10 +22,10 @@
 
 ### Existing files to read for engine extraction context
 
-- `ultimatevocalremovergui/separate.py`
-- `ultimatevocalremovergui/lib_v5/**`
-- `ultimatevocalremovergui/demucs/**`
-- `ultimatevocalremovergui/gui_data/constants.py`
+- `uvr/separate.py`
+- `uvr/lib_v5/**`
+- `uvr/demucs/**`
+- `uvr/gui_data/constants.py`
 
 ### New Rust files to create
 
@@ -1400,7 +1400,7 @@ Expected: FAIL
 
 ```python
 # target behavior
-# isolate the smallest reusable path from ultimatevocalremovergui/separate.py
+# isolate the smallest reusable path from uvr/separate.py
 # remove GUI callbacks
 # replace them with progress emitter callbacks
 # accept only the fields required for vocals/instrumental output
