@@ -22,6 +22,7 @@ fn engine_health_exposes_runtime_and_model_flags() {
         model_catalog_ready: false,
         installed_model_count: 0,
         active_job_count: 0,
+        gpu_devices: vec![],
     };
 
     assert_eq!(health.installed_model_count, 0);
@@ -37,6 +38,7 @@ fn engine_health_serializes_with_camel_case_keys() {
         model_catalog_ready: true,
         installed_model_count: 1,
         active_job_count: 0,
+        gpu_devices: vec![],
     };
 
     let value = serde_json::to_value(health).unwrap();
@@ -99,6 +101,8 @@ fn model_is_installed_when_target_file_exists() {
         size_bytes: 0,
         filename: "test_model.onnx".into(),
         version: "1".into(),
+        is_installed: false,
+        local_path: None,
     };
 
     assert!(!registry.is_model_installed(&entry));

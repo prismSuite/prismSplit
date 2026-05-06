@@ -26,20 +26,20 @@ export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
 
   return (
     <section className="setup-panel p-4 max-w-2xl mx-auto space-y-6">
-      <div className="bg-[var(--bg-panel)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] p-6 shadow-xl">
-        <h2 className="text-xl font-bold text-[var(--text-bright)] mb-4 flex items-center gap-3">
-          <div className="w-4 h-4 bg-[var(--accent-secondary)] animate-pulse"></div>
+      <div className="bg-() border-2 border-t-() border-l-() border-b-() border-r-() p-6 shadow-xl">
+        <h2 className="text-xl font-bold text-() mb-4 flex items-center gap-3">
+          <div className="w-4 h-4 bg-() animate-pulse"></div>
           ENGINE SETUP REQUIRED
         </h2>
 
-        <p className="text-[var(--text-main)] mb-6 leading-relaxed">
+        <p className="text-() mb-6 leading-relaxed">
           PrismSplit needs to initialize its private Python environment and
           verify core dependencies before separation features become available.
           This process is only required once.
         </p>
 
-        <div className="bg-[var(--bg-input)] border-2 border-t-[var(--border-shadow-deep)] border-l-[var(--border-shadow-deep)] border-b-[var(--border-hilite-subtle)] border-r-[var(--border-hilite-subtle)] p-4 mb-6 font-[Courier,monospace] text-xs">
-          <h3 className="text-[var(--text-muted)] mb-2 uppercase tracking-widest">
+        <div className="bg-() border-2 border-t-() border-l-() border-b-() border-r-() p-4 mb-6 font-[Courier,monospace] text-xs">
+          <h3 className="text-() mb-2 uppercase tracking-widest">
             Health Check Report:
           </h3>
           <ul className="space-y-1">
@@ -75,8 +75,8 @@ export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
             disabled={!!isPreparing}
             className={`font-bold py-4 px-8 border-2 transition-all ${
               isPreparing
-                ? "bg-[var(--bg-outer)] text-[var(--text-muted)] border-[var(--border-shadow)] cursor-not-allowed"
-                : "bg-[var(--accent-secondary)] text-white border-t-[#88aaff] border-l-[#88aaff] border-b-[#112244] border-r-[#112244] hover:brightness-110 active:brightness-90"
+                ? "bg-() text-() border-() cursor-not-allowed"
+                : "bg-() text-white border-t-[#88aaff] border-l-[#88aaff] border-b-[#112244] border-r-[#112244] hover:brightness-110 active:brightness-90"
             }`}
           >
             {isPreparing ? "INITIALIZING RUNTIME..." : "PREPARE ENGINE NOW"}
@@ -84,19 +84,19 @@ export function SetupPanel({ health, setupStatus, onPrepare }: Props) {
 
           {isPreparing && (
             <div className="space-y-2">
-              <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+              <div className="flex justify-between text-[10px] text-()">
                 <span>STAGE: {setupStatus.currentStage}</span>
                 <span>{setupStatus.completedStages.length} COMPLETE</span>
               </div>
-              <div className="w-full h-2 bg-[var(--bg-input)] border border-[#000] relative overflow-hidden">
+              <div className="w-full h-2 bg-() border border-[#000] relative overflow-hidden">
                 <div
-                  className="absolute top-0 left-0 h-full bg-[var(--accent-secondary)] transition-all duration-500 shadow-[0_0_8px_var(--accent-secondary)]"
+                  className="absolute top-0 left-0 h-full bg-() transition-all duration-500 shadow-[0_0_8px_var(--accent-secondary)]"
                   style={{
                     width: `${(setupStatus.completedStages.length / 8) * 100}%`,
                   }}
                 />
               </div>
-              <div className="text-[9px] text-[var(--accent-secondary)] animate-pulse">
+              <div className="text-[9px] text-() animate-pulse">
                 {setupStatus.currentStage}... DO NOT CLOSE APPLICATION
               </div>
             </div>
@@ -111,7 +111,7 @@ function HealthItem({ label, ready }: { label: string; ready?: boolean }) {
   return (
     <li className="flex items-center justify-between">
       <span>{label}</span>
-      <span className={ready ? "text-[var(--accent-glow)]" : "text-[#ff4444]"}>
+      <span className={ready ? "text-()" : "text-[#ff4444]"}>
         [{ready ? "READY" : "MISSING"}]
       </span>
     </li>

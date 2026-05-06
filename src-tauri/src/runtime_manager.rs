@@ -37,6 +37,8 @@ impl RuntimeManager {
             0
         };
 
+        let gpu_devices = self.get_gpu_devices().await;
+
         Ok(EngineHealth {
             runtime_ready,
             dependencies_ready,
@@ -44,7 +46,28 @@ impl RuntimeManager {
             model_catalog_ready,
             installed_model_count,
             active_job_count: 0,
+            gpu_devices,
         })
+    }
+
+    async fn get_gpu_devices(&self) -> Vec<String> {
+        if cfg!(target_os = "windows") {
+            let output = Command::new("wmic")
+                .args(["path", "win32_VideoController", "get", "name"])
+                .output()
+                .await;
+
+            if let Ok(output) = output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                return stdout
+                    .lines()
+                    .skip(1) // Skip header "Name"
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+            }
+        }
+        vec!["CPU Only".to_string()]
     }
 
     pub async fn prepare(&self) -> Result<SetupStatus> {

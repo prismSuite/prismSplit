@@ -8,7 +8,6 @@ pub struct AppPaths {
     pub runtime_dir: PathBuf,
     pub python_dir: PathBuf,
     pub venv_dir: PathBuf,
-    pub wheels_dir: PathBuf,
     pub engine_dir: PathBuf,
     pub models_dir: PathBuf,
     pub manifests_dir: PathBuf,
@@ -23,7 +22,6 @@ impl AppPaths {
             runtime_dir: root.join("runtime"),
             python_dir: root.join("runtime").join("python"),
             venv_dir: root.join("runtime").join("venv"),
-            wheels_dir: root.join("runtime").join("wheels"),
             engine_dir: root.join("engine"),
             models_dir: root.join("models"),
             manifests_dir: root.join("manifests"),
@@ -33,10 +31,6 @@ impl AppPaths {
             root,
             resource_dir,
         }
-    }
-
-    pub fn bundled_engine_dir(&self) -> PathBuf {
-        self.resource_dir.join("engine")
     }
 
     pub fn bundled_engine_python_dir(&self) -> PathBuf {
@@ -52,7 +46,9 @@ impl AppPaths {
     }
 
     pub fn workspace_engine_dir(&self) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("engine")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("engine")
     }
 
     pub fn workspace_engine_python_dir(&self) -> PathBuf {
@@ -72,7 +68,8 @@ impl AppPaths {
     }
 
     pub fn installed_engine_script(&self) -> PathBuf {
-        self.installed_engine_python_dir().join("prismsplit_engine.py")
+        self.installed_engine_python_dir()
+            .join("prismsplit_engine.py")
     }
 
     pub fn manifest_catalog_path(&self) -> PathBuf {

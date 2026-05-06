@@ -13,6 +13,7 @@ export type EngineHealth = {
   modelCatalogReady: boolean;
   installedModelCount: number;
   activeJobCount: number;
+  gpuDevices: string[];
 };
 
 export type ModelCatalogEntry = {

@@ -16,7 +16,7 @@ use download_manager::{download_file_with_progress, verify_sha256};
 use engine_bridge::EngineBridge;
 use model_registry::ModelRegistry;
 use models::{
-    DownloadProgressEvent, EngineHealth, ModelCatalogEntry, ProcessAudioResponse,
+    AppConfig, DownloadProgressEvent, EngineHealth, ModelCatalogEntry, ProcessAudioResponse,
     SeparationRequest, SetupStatus,
 };
 use runtime_manager::RuntimeManager;
@@ -30,6 +30,51 @@ struct AppState {
     runtime_manager: Arc<RuntimeManager>,
     model_registry: Arc<ModelRegistry>,
     active_jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
+    config_path: PathBuf,
+}
+
+fn load_config(path: &Path) -> AppConfig {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        AppConfig::default()
+    }
+}
+
+fn save_config(path: &Path, config: &AppConfig) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let content = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
+    std::fs::write(path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
+    Ok(load_config(&state.config_path))
+}
+
+#[tauri::command]
+async fn update_config(state: State<'_, AppState>, config: AppConfig) -> Result<(), String> {
+    let old_config = load_config(&state.config_path);
+    let models_dir_changed = config.models_dir != old_config.models_dir;
+
+    save_config(&state.config_path, &config)?;
+
+    // If models directory changed, we should probably update the active paths
+    // and scan the new directory automatically.
+    if models_dir_changed {
+        if let Some(new_path) = &config.models_dir {
+            // Update the model registry's internal path for the current session dynamically
+            state.model_registry.set_models_dir(PathBuf::from(new_path));
+
+            // Trigger an auto-scan of the new directory
+            let _ = scan_local_models(state, new_path.clone()).await;
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -73,6 +118,7 @@ async fn download_model(
     app_handle: tauri::AppHandle,
     model_id: String,
 ) -> Result<ModelCatalogEntry, String> {
+    println!("[INFO] Starting download for model: {}", model_id);
     let entry = state
         .model_registry
         .get_entry(&model_id)
@@ -82,40 +128,59 @@ async fn download_model(
         .validate_downloadable(&entry)
         .map_err(|e| e.to_string())?;
 
-    std::fs::create_dir_all(&state.model_registry.models_dir).map_err(|e| e.to_string())?;
+    {
+        let dir = state
+            .model_registry
+            .models_dir
+            .lock()
+            .map_err(|_| "Failed to lock models_dir".to_string())?;
+        println!("[INFO] Creating models directory: {}", dir.display());
+        std::fs::create_dir_all(&*dir).map_err(|e| e.to_string())?;
+    }
 
     let destination = state.model_registry.installed_model_path(&entry);
     let temp_destination = destination.with_extension("download");
 
-    let model_id_clone = model_id.clone();
-    let app_handle_clone = app_handle.clone();
+    println!("[INFO] Downloading to: {}", temp_destination.display());
 
-    if let Err(e) = download_file_with_progress(&entry.url, &temp_destination, move |dl, total| {
-        let progress = (dl as f32 / total as f32) * 100.0;
-        let _ = app_handle_clone.emit(
-            "download_progress",
-            DownloadProgressEvent {
-                model_id: model_id_clone.clone(),
-                progress,
-            },
-        );
+    if let Err(e) = download_file_with_progress(&entry.url, &temp_destination, {
+        let app_handle = app_handle.clone();
+        let model_id = model_id.clone();
+        move |dl, total| {
+            let progress = (dl as f32 / total as f32) * 100.0;
+            let _ = app_handle.emit(
+                "download_progress",
+                DownloadProgressEvent {
+                    model_id: model_id.clone(),
+                    progress,
+                },
+            );
+        }
     })
     .await
     {
+        println!("[ERROR] Download failed: {}", e);
         let _ = std::fs::remove_file(&temp_destination);
         return Err(e.to_string());
     }
 
     if let Err(e) = verify_sha256(&temp_destination, &entry.sha256) {
+        println!("[ERROR] SHA256 verification failed: {}", e);
         let _ = std::fs::remove_file(&temp_destination);
         return Err(e.to_string());
     }
 
-    if let Err(e) = std::fs::rename(&temp_destination, &destination) {
+    if let Err(e) = std::fs::copy(&temp_destination, &destination) {
+        println!("[ERROR] Failed to copy model file: {}", e);
         let _ = std::fs::remove_file(&temp_destination);
         return Err(e.to_string());
     }
+    let _ = std::fs::remove_file(&temp_destination);
 
+    println!(
+        "[INFO] Download complete and verified: {}",
+        destination.display()
+    );
     Ok(entry)
 }
 
@@ -239,7 +304,11 @@ async fn check_system(state: State<'_, AppState>) -> Result<String, String> {
 
 #[tauri::command]
 async fn sync_uvr_catalog(state: State<'_, AppState>) -> Result<usize, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("PrismSplit/0.1.0")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
     let url = "https://raw.githubusercontent.com/TRvlvr/application_data/main/filelists/download_checks.json";
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
     let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
@@ -312,13 +381,17 @@ async fn sync_uvr_catalog(state: State<'_, AppState>) -> Result<usize, String> {
 
     let new_entries = Arc::new(new_entries);
     let current_catalog_ids: Vec<String> = current_catalog.iter().map(|e| e.id.clone()).collect();
+    let current_catalog_filenames: Vec<String> =
+        current_catalog.iter().map(|e| e.filename.clone()).collect();
 
     // Identify which entries need size fetching (new or existing with 0 size)
     let mut entries_to_process = Vec::new();
 
     // Add new ones
     for entry in new_entries.iter() {
-        if !current_catalog_ids.contains(&entry.id) {
+        if !current_catalog_ids.contains(&entry.id)
+            && !current_catalog_filenames.contains(&entry.filename)
+        {
             entries_to_process.push(entry.clone());
         }
     }
@@ -326,7 +399,7 @@ async fn sync_uvr_catalog(state: State<'_, AppState>) -> Result<usize, String> {
     // Check existing ones with 0 size (limit to avoid too many requests)
     let mut fix_count = 0;
     for entry in &mut current_catalog {
-        if entry.size_bytes == 0 && !entry.url.is_empty() && fix_count < 20 {
+        if entry.size_bytes == 0 && !entry.url.is_empty() && fix_count < 100 {
             entries_to_process.push(entry.clone());
             fix_count += 1;
         }
@@ -370,6 +443,7 @@ async fn sync_uvr_catalog(state: State<'_, AppState>) -> Result<usize, String> {
 
 #[tauri::command]
 async fn scan_local_models(state: State<'_, AppState>, path: String) -> Result<usize, String> {
+    println!("[INFO] Scanning local directory: {}", path);
     let scan_path = Path::new(&path);
     if !scan_path.is_dir() {
         return Err(format!("Path `{}` is not a valid directory", path));
@@ -378,7 +452,13 @@ async fn scan_local_models(state: State<'_, AppState>, path: String) -> Result<u
     let mdx_data_url = "https://raw.githubusercontent.com/TRvlvr/application_data/main/mdx_model_data/model_data_new.json";
     let vr_data_url = "https://raw.githubusercontent.com/TRvlvr/application_data/main/vr_model_data/model_data_new.json";
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("PrismSplit/0.1.0")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    println!("[INFO] Fetching remote model metadata for identification...");
     let mdx_data: serde_json::Value = client
         .get(mdx_data_url)
         .send()
@@ -405,17 +485,24 @@ async fn scan_local_models(state: State<'_, AppState>, path: String) -> Result<u
     {
         let file_path = entry.path();
         if file_path.is_file() {
-            let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if ext == "onnx" || ext == "pth" || ext == "th" {
+            let ext = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext == "onnx" || ext == "pth" || ext == "th" || ext == "ckpt" {
+                println!("[DEBUG] Found model candidate: {}", file_path.display());
                 if let Ok(hash) = download_manager::md5_file(file_path) {
+                    println!("[DEBUG]   Hash: {}", hash);
                     let mut model_name = file_path
                         .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("Unknown")
                         .to_string();
-                    let mut backend = match ext {
+                    let mut backend = match ext.as_str() {
                         "onnx" => "mdx",
                         "pth" => "vr",
+                        "ckpt" => "vr",
                         _ => "demucs",
                     };
 
@@ -435,6 +522,7 @@ async fn scan_local_models(state: State<'_, AppState>, path: String) -> Result<u
 
                     let id = format!("local_{}", hash);
                     if !current_catalog.iter().any(|e| e.id == id) {
+                        println!("[INFO] Registering local model: {}", model_name);
                         current_catalog.push(ModelCatalogEntry {
                             id,
                             name: format!("[LOCAL] {}", model_name),
@@ -463,6 +551,10 @@ async fn scan_local_models(state: State<'_, AppState>, path: String) -> Result<u
         .model_registry
         .save_catalog(&current_catalog)
         .map_err(|e| e.to_string())?;
+    println!(
+        "[INFO] Scan finished. Added {} new local models.",
+        added_count
+    );
     Ok(added_count)
 }
 
@@ -479,7 +571,22 @@ fn main() {
                 .path()
                 .resource_dir()
                 .expect("failed to get resource dir");
-            let paths = AppPaths::new(app_data_dir, resource_dir);
+            let config_dir = app
+                .path()
+                .app_config_dir()
+                .expect("failed to get app config dir");
+            let config_path = config_dir.join("config.json");
+
+            let config = load_config(&config_path);
+
+            let mut paths = AppPaths::new(app_data_dir, resource_dir);
+            if let Some(custom_models) = config.models_dir {
+                paths.models_dir = PathBuf::from(custom_models);
+            }
+            if let Some(custom_cache) = config.cache_dir {
+                paths.cache_dir = PathBuf::from(custom_cache);
+            }
+
             let runtime_manager = Arc::new(RuntimeManager::new(paths.clone()));
             let model_registry = Arc::new(ModelRegistry::new(
                 paths.models_dir.clone(),
@@ -492,6 +599,7 @@ fn main() {
                 runtime_manager,
                 model_registry,
                 active_jobs,
+                config_path,
             });
             Ok(())
         })
@@ -504,7 +612,9 @@ fn main() {
             prepare_engine,
             cancel_job,
             sync_uvr_catalog,
-            scan_local_models
+            scan_local_models,
+            get_config,
+            update_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

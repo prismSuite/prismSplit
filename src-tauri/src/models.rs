@@ -19,6 +19,7 @@ pub struct EngineHealth {
     pub model_catalog_ready: bool,
     pub installed_model_count: usize,
     pub active_job_count: usize,
+    pub gpu_devices: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,4 +62,11 @@ pub struct ProcessAudioResponse {
 pub struct DownloadProgressEvent {
     pub model_id: String,
     pub progress: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AppConfig {
+    pub models_dir: Option<String>,
+    pub cache_dir: Option<String>,
 }

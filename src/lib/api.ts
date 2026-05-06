@@ -120,6 +120,7 @@ export async function getEngineHealth(): Promise<EngineHealth> {
     modelCatalogReady: false,
     installedModelCount: 0,
     activeJobCount: 0,
+    gpuDevices: [],
   };
 }
 
@@ -142,9 +143,22 @@ export async function syncUvrCatalog(): Promise<number> {
   return 0;
 }
 
-export async function scanLocalModels(path: String): Promise<number> {
+export async function scanLocalModels(path: string): Promise<number> {
   if (isTauri()) {
     return await invoke("scan_local_models", { path });
   }
   return 0;
+}
+
+export async function getConfig(): Promise<any> {
+  if (isTauri()) {
+    return await invoke("get_config");
+  }
+  return { modelsDir: null, cacheDir: null };
+}
+
+export async function updateConfig(config: any): Promise<void> {
+  if (isTauri()) {
+    return await invoke("update_config", { config });
+  }
 }

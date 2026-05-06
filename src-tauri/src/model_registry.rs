@@ -2,17 +2,25 @@ use crate::models::ModelCatalogEntry;
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone)]
+use std::sync::Mutex;
+
+#[derive(Debug)]
 pub struct ModelRegistry {
-    pub models_dir: PathBuf,
+    pub models_dir: Mutex<PathBuf>,
     pub catalog_path: PathBuf,
 }
 
 impl ModelRegistry {
     pub fn new(models_dir: PathBuf, catalog_path: PathBuf) -> Self {
         Self {
-            models_dir,
+            models_dir: Mutex::new(models_dir),
             catalog_path,
+        }
+    }
+
+    pub fn set_models_dir(&self, path: PathBuf) {
+        if let Ok(mut dir) = self.models_dir.lock() {
+            *dir = path;
         }
     }
 
@@ -46,11 +54,15 @@ impl ModelRegistry {
     }
 
     pub fn is_model_installed(&self, entry: &ModelCatalogEntry) -> bool {
-        self.models_dir.join(&entry.filename).exists()
+        if let Ok(dir) = self.models_dir.lock() {
+            dir.join(&entry.filename).exists()
+        } else {
+            false
+        }
     }
 
     pub fn installed_model_path(&self, entry: &ModelCatalogEntry) -> PathBuf {
-        self.models_dir.join(&entry.filename)
+        self.models_dir.lock().unwrap().join(&entry.filename)
     }
 
     pub fn validate_downloadable(&self, entry: &ModelCatalogEntry) -> Result<()> {
@@ -73,12 +85,14 @@ impl ModelRegistry {
     }
 }
 
+#[allow(dead_code)]
 pub fn load_catalog_from_path(path: &Path) -> Result<Vec<ModelCatalogEntry>> {
     let contents = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read catalog from {}", path.display()))?;
     load_catalog_from_str(&contents)
 }
 
+#[allow(dead_code)]
 pub fn load_catalog_from_str(contents: &str) -> Result<Vec<ModelCatalogEntry>> {
     Ok(serde_json::from_str(contents)?)
 }

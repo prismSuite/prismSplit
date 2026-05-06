@@ -12,6 +12,8 @@ import {
   downloadModel,
   syncUvrCatalog,
   scanLocalModels,
+  getConfig,
+  updateConfig,
 } from "./lib/api";
 import { listen } from "@tauri-apps/api/event";
 import type {
@@ -42,6 +44,7 @@ export default function App() {
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [appConfig, setAppConfig] = useState({ modelsDir: "", cacheDir: "" });
 
   // Form state
   const [inputFile, setInputFile] = useState<string>("");
@@ -96,7 +99,44 @@ export default function App() {
 
   useEffect(() => {
     refreshHealth();
+    loadAppConfig();
   }, []);
+
+  const loadAppConfig = async () => {
+    try {
+      const cfg = await getConfig();
+      setAppConfig({
+        modelsDir: cfg.modelsDir || "",
+        cacheDir: cfg.cacheDir || "",
+      });
+    } catch (e) {
+      addLog(`ERROR: Failed to load app config: ${e}`);
+    }
+  };
+
+  const handleApplySettings = async () => {
+    try {
+      await updateConfig(appConfig);
+      addLog("Settings applied. Some changes require restart.");
+      await refreshHealth();
+    } catch (e) {
+      addLog(`ERROR: Failed to apply settings: ${e}`);
+    }
+  };
+
+  const handleBrowseModels = async () => {
+    const path = await openDirDialog();
+    if (path) {
+      setAppConfig((prev) => ({ ...prev, modelsDir: path }));
+    }
+  };
+
+  const handleBrowseCache = async () => {
+    const path = await openDirDialog();
+    if (path) {
+      setAppConfig((prev) => ({ ...prev, cacheDir: path }));
+    }
+  };
 
   const refreshHealth = async () => {
     try {
@@ -231,7 +271,7 @@ export default function App() {
   // Conditional view: Setup if engine not ready
   if (isInitializing) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[var(--bg-outer)] text-white">
+      <div className="flex h-screen items-center justify-center bg-() text-white">
         <div className="animate-pulse">PRISMSPLIT_CORE_BOOTSTRAP...</div>
       </div>
     );
@@ -239,12 +279,12 @@ export default function App() {
 
   if (!health?.runtimeReady || !health?.dependenciesReady) {
     return (
-      <div className={`flex h-screen bg-[var(--bg-outer)] p-1 ${theme}`}>
-        <div className="flex-1 bg-[var(--bg-panel)] border-2 border-[var(--border-chassis)] flex flex-col overflow-hidden">
-          <div className="bg-[var(--bg-titlebar)] p-2 font-bold text-[var(--text-bright)]">
+      <div className={`flex h-screen bg-() p-1 ${theme}`}>
+        <div className="flex-1 bg-() border-2 border-() flex flex-col overflow-hidden">
+          <div className="bg-() p-2 font-bold text-()">
             PRISMSPLIT ENGINE SETUP
           </div>
-          <div className="flex-1 overflow-y-auto bg-[var(--bg-workspace)]">
+          <div className="flex-1 overflow-y-auto bg-()">
             <SetupPanel
               health={health}
               setupStatus={setupStatus}
@@ -258,12 +298,12 @@ export default function App() {
 
   return (
     <div
-      className={`flex h-screen bg-[var(--bg-outer)] text-[var(--text-main)] font-[Tahoma,sans-serif] text-xs select-none p-1 ${theme}`}
+      className={`flex h-screen bg-() text-() font-[Tahoma,sans-serif] text-xs select-none p-1 ${theme}`}
     >
       {/* Main Window Frame */}
-      <div className="flex-1 flex flex-col bg-[var(--bg-panel)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-chassis)] border-r-[var(--border-chassis)] shadow-lg">
+      <div className="flex-1 flex flex-col bg-() border-2 border-t-() border-l-() border-b-() border-r-() shadow-lg">
         {/* Toolbar */}
-        <div className="bg-[var(--bg-toolbar)] border-b-2 border-t-[var(--border-hilite)] border-[#222222] p-1 flex gap-1">
+        <div className="bg-() border-b-2 border-t-() border-[#222222] p-1 flex gap-1">
           <ToolbarButton
             active={activeTab === "separate"}
             onClick={() => setActiveTab("separate")}
@@ -287,13 +327,13 @@ export default function App() {
         </div>
 
         {/* Workspace */}
-        <div className="flex-1 p-2 bg-[var(--bg-workspace)] overflow-y-auto inset-border">
+        <div className="flex-1 p-2 bg-() overflow-y-auto inset-border">
           {activeTab === "separate" && (
             <div className="space-y-4 max-w-4xl mx-auto">
               {/* I/O Section */}
               <Fieldset legend="I/O Configuration">
                 <div
-                  className={`grid grid-cols-[100px_1fr_80px] gap-2 items-center mb-2 p-2 transition-all border-2 border-dashed ${isDragging ? "border-[var(--accent-glow)] bg-[var(--bg-toolbar)]" : "border-transparent"}`}
+                  className={`grid grid-cols-[100px_1fr_80px] gap-2 items-center mb-2 p-2 transition-all border-2 border-dashed ${isDragging ? "border-() bg-()" : "border-transparent"}`}
                   onDragOver={(e) => {
                     e.preventDefault();
                     setIsDragging(true);
@@ -440,8 +480,8 @@ export default function App() {
           )}
 
           {activeTab === "train" && (
-            <div className="text-center mt-10 text-[var(--text-muted)]">
-              <div className="text-xl font-bold mb-2 text-[var(--text-subtext)]">
+            <div className="text-center mt-10 text-()">
+              <div className="text-xl font-bold mb-2 text-()">
                 MODULE NOT LOADED
               </div>
               <p>
@@ -479,9 +519,16 @@ export default function App() {
                   <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
                     <label>Preferred GPU Device:</label>
                     <select className="pro-input">
-                      <option>Device 0: NVIDIA GeForce RTX 4090</option>
-                      <option>Device 1: Intel(R) UHD Graphics</option>
-                      <option>Auto-detect</option>
+                      {health?.gpuDevices && health.gpuDevices.length > 0 ? (
+                        health.gpuDevices.map((gpu, i) => (
+                          <option key={i} value={i}>
+                            Device {i}: {gpu}
+                          </option>
+                        ))
+                      ) : (
+                        <option>No GPU devices detected</option>
+                      )}
+                      <option value="auto">Auto-detect</option>
                     </select>
                   </div>
 
@@ -527,33 +574,41 @@ export default function App() {
                   <label>Model Registry Path:</label>
                   <input
                     type="text"
-                    defaultValue="C:\\PrismSplit\\Models"
+                    value={appConfig.modelsDir}
+                    onChange={(e) =>
+                      setAppConfig((p) => ({ ...p, modelsDir: e.target.value }))
+                    }
+                    placeholder="Default (AppData)"
                     className="pro-input"
                   />
-                  <ProButton
-                    label="Browse..."
-                    onClick={() => openDirDialog()}
-                  />
+                  <ProButton label="Browse..." onClick={handleBrowseModels} />
                 </div>
                 <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center">
                   <label>Temporary Cache:</label>
                   <input
                     type="text"
-                    defaultValue="%TEMP%\\PrismSplit"
+                    value={appConfig.cacheDir}
+                    onChange={(e) =>
+                      setAppConfig((p) => ({ ...p, cacheDir: e.target.value }))
+                    }
+                    placeholder="Default (Temp)"
                     className="pro-input"
                   />
-                  <ProButton
-                    label="Browse..."
-                    onClick={() => openDirDialog()}
-                  />
+                  <ProButton label="Browse..." onClick={handleBrowseCache} />
                 </div>
               </Fieldset>
 
               <div className="flex justify-end gap-2 mt-4">
-                <button className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-6 py-2 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]">
-                  Apply
+                <button
+                  onClick={handleApplySettings}
+                  className="bg-() text-() px-6 py-2 border-2 border-t-() border-l-() border-b-() border-r-() active:border-t-() active:border-l-() active:border-b-() active:border-r-()"
+                >
+                  Apply & Scan
                 </button>
-                <button className="bg-[var(--bg-btn)] text-[var(--text-bright)] px-6 py-2 border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-shadow-deep)] border-r-[var(--border-shadow-deep)] active:border-t-[var(--border-shadow-deep)] active:border-l-[var(--border-shadow-deep)] active:border-b-[var(--border-hilite)] active:border-r-[var(--border-hilite)]">
+                <button
+                  onClick={() => setAppConfig({ modelsDir: "", cacheDir: "" })}
+                  className="bg-() text-() px-6 py-2 border-2 border-t-() border-l-() border-b-() border-r-() active:border-t-() active:border-l-() active:border-b-() active:border-r-()"
+                >
                   Reset Defaults
                 </button>
               </div>
@@ -562,7 +617,7 @@ export default function App() {
         </div>
 
         {/* Status Bar */}
-        <div className="bg-[var(--bg-panel)] border-t-2 border-[var(--border-chassis)] px-2 py-1 text-[10px] text-[var(--text-subtext)] flex justify-between">
+        <div className="bg-(--bg-panel) border-t-2 border-(--border-chassis) px-2 py-1 text-[10px] text-(--text-subtext) flex justify-between">
           <div>
             {isProcessing
               ? "Processing audio buffer..."
@@ -570,7 +625,11 @@ export default function App() {
                 ? "Generating preview..."
                 : "Ready"}
           </div>
-          <div>MEM: 452MB / GPU: READY</div>
+          <div>
+            {health?.gpuDevices && health.gpuDevices.length > 0
+              ? `GPU: ${health.gpuDevices[0].substring(0, 20)}...`
+              : "GPU: READY"}
+          </div>
         </div>
       </div>
 

@@ -2,7 +2,6 @@
 use anyhow::{bail, Result};
 use futures_util::StreamExt;
 use md5::{Digest as _, Md5};
-use sha2::{Digest as _, Sha256};
 use std::{
     fs::File,
     io::{Read, Write},
@@ -11,7 +10,7 @@ use std::{
 
 pub fn sha256_file(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
+    let mut hasher = sha2::Sha256::new();
     let mut buffer = [0u8; 8192];
 
     loop {
@@ -19,10 +18,10 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         if read == 0 {
             break;
         }
-        hasher.update(&buffer[..read]);
+        sha2::Digest::update(&mut hasher, &buffer[..read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(format!("{:x}", sha2::Digest::finalize(hasher)))
 }
 
 pub fn md5_file(path: &Path) -> Result<String> {
@@ -41,10 +40,6 @@ pub fn md5_file(path: &Path) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-pub async fn download_file(url: &str, destination: &Path) -> Result<()> {
-    download_file_with_progress(url, destination, |_, _| {}).await
-}
-
 pub async fn download_file_with_progress<F>(
     url: &str,
     destination: &Path,
@@ -53,7 +48,12 @@ pub async fn download_file_with_progress<F>(
 where
     F: FnMut(u64, u64) + Send + 'static,
 {
-    let response = reqwest::get(url).await?;
+    let client = reqwest::Client::builder()
+        .user_agent("PrismSplit/0.1.0")
+        .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout for large models
+        .build()?;
+
+    let response = client.get(url).send().await?;
     if !response.status().is_success() {
         bail!("Failed to download file: {}", response.status());
     }
