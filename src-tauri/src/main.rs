@@ -19,12 +19,24 @@ use models::{
     EngineHealth, ModelCatalogEntry, ProcessAudioResponse, SeparationRequest, SetupStatus,
 };
 use runtime_manager::RuntimeManager;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Manager, State};
+use tokio::sync::Mutex;
 
 struct AppState {
     runtime_manager: RuntimeManager,
     model_registry: Arc<ModelRegistry>,
+    active_jobs: Arc<Mutex<HashMap<String, tokio::process::Child>>>,
+}
+
+#[tauri::command]
+async fn cancel_job(state: State<'_, AppState>, job_id: String) -> Result<(), String> {
+    let mut jobs = state.active_jobs.lock().await;
+    if let Some(mut child) = jobs.remove(&job_id) {
+        let _ = child.kill().await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -50,15 +62,6 @@ async fn list_model_catalog(state: State<'_, AppState>) -> Result<Vec<ModelCatal
     state
         .model_registry
         .load_catalog()
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn get_available_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    state
-        .model_registry
-        .load_catalog()
-        .map(|entries| entries.into_iter().map(|entry| entry.name).collect())
         .map_err(|e| e.to_string())
 }
 
@@ -231,20 +234,23 @@ fn main() {
                 paths.manifest_catalog_path(),
             ));
 
+            let active_jobs = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+
             app.manage(AppState {
                 runtime_manager,
                 model_registry,
+                active_jobs,
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_available_models,
             list_model_catalog,
             download_model,
             process_audio,
             check_system,
             get_engine_health,
-            prepare_engine
+            prepare_engine,
+            cancel_job
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

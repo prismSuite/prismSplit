@@ -21,11 +21,10 @@ futures = "0.3"
 walkdir = "2.3"
 dirs = "5.0"
 dircpy = "0.3"
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
 sha2 = "0.10"
 futures-util = "0.3"
 tokio-util = "0.7"
-zip = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "1"
 

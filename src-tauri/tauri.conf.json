@@ -1,7 +1,7 @@
 {
   "productName": "PrismSplit",
   "version": "0.1.0",
-  "identifier": "com.prismsplit.app",
+  "identifier": "com.prismsplit.audio",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -16,7 +16,7 @@
         "height": 700,
         "resizable": true,
         "fullscreen": false,
-        "decorations": false
+        "decorations": true
       }
     ],
     "security": {

@@ -91,14 +91,6 @@ export async function processAudio(
   }
 }
 
-export async function getAvailableModels(): Promise<string[]> {
-  if (isTauri()) {
-    return await invoke("get_available_models");
-  } else {
-    return ["Demucs v4 (htdemucs)", "MDX-Net (UVR-MDX-NET)", "VR Architecture"];
-  }
-}
-
 export async function listModelCatalog(): Promise<ModelCatalogEntry[]> {
   if (isTauri()) {
     return await invoke("list_model_catalog");

@@ -213,47 +213,6 @@ export default function App() {
     >
       {/* Main Window Frame */}
       <div className="flex-1 flex flex-col bg-[var(--bg-panel)] border-2 border-t-[var(--border-hilite)] border-l-[var(--border-hilite)] border-b-[var(--border-chassis)] border-r-[var(--border-chassis)] shadow-lg">
-        {/* Title Bar */}
-        <div
-          data-tauri-drag-region
-          className="bg-[var(--bg-titlebar)] border-b-2 border-[var(--border-chassis)] px-2 py-1 flex items-center justify-between shadow-sm select-none cursor-default"
-        >
-          <div
-            data-tauri-drag-region
-            className="font-bold text-[var(--text-bright)] flex items-center gap-2"
-          >
-            <div className="w-3 h-3 bg-[var(--accent-secondary)] border border-[#111111] shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] pointer-events-none"></div>
-            <span className="pointer-events-none">
-              PRISMSPLIT STEM EXTRACTOR
-            </span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-[10px] text-[var(--text-muted)] pointer-events-none">
-              v0.1.0-alpha x64
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={minimizeWindow}
-                className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]"
-              >
-                _
-              </button>
-              <button
-                onClick={toggleMaximizeWindow}
-                className="w-5 h-5 flex items-center justify-center bg-[var(--bg-btn)] border border-[var(--border-chassis)] hover:bg-[var(--bg-btn-hover)] text-[var(--text-main)] active:bg-[var(--bg-panel)]"
-              >
-                □
-              </button>
-              <button
-                onClick={closeWindow}
-                className="w-5 h-5 flex items-center justify-center bg-[#880000] border border-[#330000] hover:bg-[#aa0000] text-[#ffffff] active:bg-[#660000]"
-              >
-                X
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Toolbar */}
         <div className="bg-[var(--bg-toolbar)] border-b-2 border-t-[var(--border-hilite)] border-[#222222] p-1 flex gap-1">
           <ToolbarButton
