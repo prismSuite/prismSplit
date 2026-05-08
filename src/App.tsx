@@ -28,17 +28,17 @@ import { ModelRegistryPanel } from "./components/ModelRegistryPanel";
 import { SeparationPanel } from "./components/SeparationPanel";
 import { LogConsole } from "./components/LogConsole";
 import {
-  ToolbarButton,
+  NavButton,
   Fieldset,
-  ProButton,
+  Button,
   HelpIcon,
   Checkbox,
+  Select,
 } from "./components/shared";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("separate");
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
-  const [theme, setTheme] = useState("theme-classic");
 
   // Engine state
   const [health, setHealth] = useState<EngineHealth | null>(null);
@@ -85,7 +85,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    logEndRef.current?.scrollIntoView({ behavior: "instant" });
   }, [log]);
 
   useEffect(() => {
@@ -271,602 +271,367 @@ export default function App() {
   // Conditional view: Setup if engine not ready
   if (isInitializing) {
     return (
-      <div className="flex h-screen items-center justify-center bg-() text-white">
-        <div className="animate-pulse">PRISMSPLIT_CORE_BOOTSTRAP...</div>
+      <div className="app-container items-center justify-center">
+        <div className="text-accent-green font-bold animate-pulse tracking-[0.2em]">
+          PRISMSPLIT_CORE_BOOTSTRAP...
+        </div>
       </div>
     );
   }
 
   if (!health?.runtimeReady || !health?.dependenciesReady) {
     return (
-      <div className={`flex h-screen bg-() p-1 ${theme}`}>
-        <div className="flex-1 bg-() border-2 border-() flex flex-col overflow-hidden">
-          <div className="bg-() p-2 font-bold text-()">
-            PRISMSPLIT ENGINE SETUP
+      <div className="app-container">
+        <div className="top-bar">
+          <div className="text-primary font-bold tracking-tighter text-lg">
+            PRISMSPLIT // <span className="text-accent-green">CORE_SETUP</span>
           </div>
-          <div className="flex-1 overflow-y-auto bg-()">
-            <SetupPanel
-              health={health}
-              setupStatus={setupStatus}
-              onPrepare={handlePrepareEngine}
-            />
-          </div>
+        </div>
+        <main className="main-content">
+          <SetupPanel
+            health={health}
+            setupStatus={setupStatus}
+            onPrepare={handlePrepareEngine}
+          />
+        </main>
+        <div className="status-bar">
+          <span>SYSTEM_INIT_MODE</span>
+          <span>BUILD: 2026.05.08</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div
-      className={`flex h-screen bg-() text-() font-[Tahoma,sans-serif] text-xs select-none p-1 ${theme}`}
-    >
-      {/* Main Window Frame */}
-      <div className="flex-1 flex flex-col bg-() border-2 border-t-() border-l-() border-b-() border-r-() shadow-lg">
-        {/* Toolbar */}
-        <div className="bg-() border-b-2 border-t-() border-[#222222] p-1 flex gap-1">
-          <ToolbarButton
-            active={activeTab === "separate"}
-            onClick={() => setActiveTab("separate")}
-            label="Extraction"
-          />
-          <ToolbarButton
-            active={activeTab === "train"}
-            onClick={() => setActiveTab("train")}
-            label="Training Mode"
-          />
-          <ToolbarButton
-            active={activeTab === "models"}
-            onClick={() => setActiveTab("models")}
-            label="Model Registry"
-          />
-          <ToolbarButton
-            active={activeTab === "settings"}
-            onClick={() => setActiveTab("settings")}
-            label="System Config"
-          />
+    <div className="app-container">
+      {/* Top Bar / Menu Bar */}
+      <div className="top-bar">
+        <div className="text-primary font-bold tracking-tighter text-lg mr-md">
+          PRISMSPLIT // <span className="text-accent-green">V0.1.0-ALPHA</span>
         </div>
+        <NavButton
+          active={activeTab === "separate"}
+          onClick={() => setActiveTab("separate")}
+          label="EXTRACTION"
+        />
+        <NavButton
+          active={activeTab === "models"}
+          onClick={() => setActiveTab("models")}
+          label="MODEL_REGISTRY"
+        />
+        <NavButton
+          active={activeTab === "settings"}
+          onClick={() => setActiveTab("settings")}
+          label="SYSTEM_CONFIG"
+        />
+      </div>
 
-        {/* Workspace */}
-        <div className="flex-1 p-2 bg-() overflow-y-auto inset-border">
+      {/* Main Content Workspace */}
+      <main className="main-content">
+        <div className="workspace">
           {activeTab === "separate" && (
-            <div className="space-y-4 max-w-4xl mx-auto">
-              {/* I/O Section */}
-              <Fieldset legend="I/O Configuration">
-                <div
-                  className={`grid grid-cols-[100px_1fr_80px] gap-2 items-center mb-2 p-2 transition-all border-2 border-dashed ${isDragging ? "border-() bg-()" : "border-transparent"}`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setIsDragging(true);
-                  }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setIsDragging(false);
-                    const file = e.dataTransfer.files[0];
-                    if (file) {
-                      // @ts-ignore
-                      const path = file.path || file.name;
-                      setInputFile(path);
-                      addLog(`FILE LOADED via D&D: ${path}`);
-                    }
-                  }}
-                >
-                  <label>Input Source:</label>
-                  <input
-                    type="text"
-                    value={inputFile}
-                    onChange={(e) => setInputFile(e.target.value)}
-                    className="pro-input"
-                    placeholder="Drag & Drop audio file here, or Browse..."
-                  />
-                  <ProButton
-                    label="Browse..."
-                    onClick={async () => {
-                      const res = await openFileDialog();
-                      if (res) {
-                        setInputFile(res);
-                        addLog(`FILE LOADED: ${res}`);
-                      }
-                    }}
-                  />
-                </div>
-                <div className="grid grid-cols-[100px_1fr_80px] gap-2 items-center">
-                  <label>Output Dir:</label>
-                  <input
-                    type="text"
-                    value={outputDir}
-                    onChange={(e) => setOutputDir(e.target.value)}
-                    className="pro-input"
-                    placeholder="Same as input directory"
-                  />
-                  <ProButton
-                    label="Browse..."
-                    onClick={async () => {
-                      const res = await openDirDialog();
-                      if (res) {
-                        setOutputDir(res);
-                        addLog(`DIR SELECTED: ${res}`);
-                      }
-                    }}
-                  />
-                </div>
-              </Fieldset>
-
-              <div className="grid grid-cols-2 gap-4">
-                {/* Engine Settings */}
-                <Fieldset legend="Engine Parameters">
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block mb-1">
-                        Architecture / Weights:
+            <div className="grid-dashboard">
+              {/* Left Column (8/12) */}
+              <div className="col-span-8 space-y-sm flex flex-col">
+                <Fieldset legend="I/O TARGETS" className="flex-1">
+                  <div className="space-y-sm flex flex-col justify-center h-full p-sm">
+                    <div
+                      className={`grid grid-cols-[100px_1fr_100px] gap-sm items-center p-md transition-all border-2 border-dashed ${isDragging ? "border-accent-green bg-accent-green-dark" : "border-border-mid bg-bg-secondary"}`}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragging(true);
+                      }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const file = e.dataTransfer.files[0];
+                        if (file) {
+                          // @ts-ignore
+                          const path = file.path || file.name;
+                          setInputFile(path);
+                          addLog(`FILE LOADED via D&D: ${path}`);
+                        }
+                      }}
+                    >
+                      <label className="text-secondary font-bold font-mono">
+                        INPUT_SRC:
                       </label>
-                      <select
-                        value={selectedModel}
-                        onChange={(e) => setSelectedModel(e.target.value)}
-                        className="pro-input w-full"
+                      <input
+                        type="text"
+                        value={inputFile}
+                        onChange={(e) => setInputFile(e.target.value)}
+                        className="input w-full font-mono text-[10px]"
+                        placeholder="Drag & Drop audio file here, or Browse..."
+                      />
+                      <Button
+                        onClick={async () => {
+                          const res = await openFileDialog();
+                          if (res) {
+                            setInputFile(res);
+                            addLog(`FILE LOADED: ${res}`);
+                          }
+                        }}
                       >
-                        {catalog.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name}
-                          </option>
-                        ))}
-                      </select>
+                        BROWSE
+                      </Button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block mb-1">Export Format:</label>
-                        <select
-                          value={exportFormat}
-                          onChange={(e) => setExportFormat(e.target.value)}
-                          className="pro-input w-full"
-                        >
-                          <option>WAV (32-bit float)</option>
-                          <option>WAV (24-bit PCM)</option>
-                          <option>FLAC (Level 8)</option>
-                          <option>MP3 (320kbps)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <div className="flex items-center mb-1">
-                          <label>Compute Profile:</label>
-                          <HelpIcon tooltip="Fast: CPU only. Normal: Basic GPU acceleration. High Quality: High overlap to reduce artifacts. Extreme: Max settings, heavy VRAM usage." />
-                        </div>
-                        <select
-                          value={quality}
-                          onChange={(e) => setQuality(e.target.value)}
-                          className="pro-input w-full"
-                        >
-                          <option>Fast (CPU)</option>
-                          <option>Normal (CUDA)</option>
-                          <option>High Quality (Overlap)</option>
-                          <option>Extreme (Aggressive Math)</option>
-                        </select>
-                      </div>
+                    <div className="grid grid-cols-[100px_1fr_100px] gap-sm items-center p-md border border-border-mid bg-bg-secondary">
+                      <label className="text-secondary font-bold font-mono">
+                        OUTPUT_DIR:
+                      </label>
+                      <input
+                        type="text"
+                        value={outputDir}
+                        onChange={(e) => setOutputDir(e.target.value)}
+                        className="input w-full font-mono text-[10px]"
+                        placeholder="Same as input directory"
+                      />
+                      <Button
+                        onClick={async () => {
+                          const res = await openDirDialog();
+                          if (res) {
+                            setOutputDir(res);
+                            addLog(`DIR SELECTED: ${res}`);
+                          }
+                        }}
+                      >
+                        BROWSE
+                      </Button>
                     </div>
                   </div>
                 </Fieldset>
 
-                {/* Advanced Operations */}
-                <Fieldset legend="Advanced">
-                  <div className="space-y-2">
-                    <Checkbox
-                      label="Invert Spectrogram (Subtract vocals)"
-                      defaultChecked
+                <Fieldset legend="EXECUTION_NODE">
+                  <SeparationPanel
+                    request={{
+                      inputPath: inputFile,
+                      modelId: selectedModel,
+                      outputDir,
+                      format: exportFormat,
+                    }}
+                    onRun={handleProcess}
+                    isProcessing={isProcessing}
+                    progress={0}
+                  />
+                </Fieldset>
+              </div>
+
+              {/* Right Column (4/12) */}
+              <div className="col-span-4 space-y-sm flex flex-col">
+                <Fieldset legend="ENGINE_PARAMS">
+                  <div className="space-y-md p-xs">
+                    <Select
+                      label="NEURAL ARCHITECTURE:"
+                      value={selectedModel}
+                      onChange={setSelectedModel}
+                      options={catalog.map((m) => m.id)}
                     />
-                    <Checkbox label="Enable TTA (Test-Time Augmentation)" />
-                    <Checkbox label="Shift pitch before processing" />
-                    <Checkbox label="Post-process masking" />
+
+                    <Select
+                      label="EXPORT CODEC:"
+                      value={exportFormat}
+                      onChange={setExportFormat}
+                      options={[
+                        "WAV (32-bit float)",
+                        "WAV (24-bit PCM)",
+                        "FLAC (Level 8)",
+                        "MP3 (320kbps)",
+                      ]}
+                    />
+
+                    <div className="flex flex-col gap-xs">
+                      <div className="flex items-center">
+                        <label className="select-label">COMPUTE PROFILE:</label>
+                        <HelpIcon tooltip="Fast: CPU only. Normal: Basic GPU acceleration. High Quality: High overlap to reduce artifacts." />
+                      </div>
+                      <Select
+                        value={quality}
+                        onChange={setQuality}
+                        options={[
+                          "Fast (CPU)",
+                          "Normal (CUDA)",
+                          "High Quality (Overlap)",
+                          "Extreme (Aggressive Math)",
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </Fieldset>
+
+                <Fieldset legend="POST_PROCESSING" className="flex-1">
+                  <div className="space-y-md p-xs">
+                    <Checkbox
+                      label="Invert Spectrogram (Subtract)"
+                      checked={true}
+                      onChange={() => {}}
+                    />
+                    <Checkbox
+                      label="Enable TTA (Test-Time Augmentation)"
+                      checked={false}
+                      onChange={() => {}}
+                    />
+                    <Checkbox
+                      label="Pre-Shift Pitch Alignment"
+                      checked={false}
+                      onChange={() => {}}
+                    />
+                    <Checkbox
+                      label="Aggressive Noise Masking"
+                      checked={false}
+                      onChange={() => {}}
+                    />
                   </div>
                 </Fieldset>
               </div>
-
-              {/* Execution */}
-              <SeparationPanel
-                request={{
-                  inputPath: inputFile,
-                  modelId: selectedModel,
-                  outputDir,
-                  format: exportFormat,
-                }}
-                onRun={handleProcess}
-                isProcessing={isProcessing}
-                progress={0}
-              />
-
-              {/* Output Console */}
-              <LogConsole logs={log} onClear={() => setLog([])} />
-            </div>
-          )}
-
-          {activeTab === "train" && (
-            <div className="text-center mt-10 text-()">
-              <div className="text-xl font-bold mb-2 text-()">
-                MODULE NOT LOADED
-              </div>
-              <p>
-                Training engine requires manual PyTorch environment
-                configuration.
-              </p>
-              <p>Check the console for dependency errors.</p>
             </div>
           )}
 
           {activeTab === "models" && (
-            <ModelRegistryPanel
-              models={catalog}
-              onDownload={handleDownloadModel}
-              onSync={handleSyncCatalog}
-              onScan={handleScanModels}
-              downloadingId={downloadingId}
-              downloadProgress={downloadProgress}
-            />
+            <div className="grid-dashboard">
+              <div className="col-span-12">
+                <ModelRegistryPanel
+                  models={catalog}
+                  onDownload={handleDownloadModel}
+                  onSync={handleSyncCatalog}
+                  onScan={handleScanModels}
+                  downloadingId={downloadingId}
+                  downloadProgress={downloadProgress}
+                />
+              </div>
+            </div>
           )}
 
           {activeTab === "settings" && (
-            <div className="space-y-4 max-w-4xl mx-auto mt-2">
-              <Fieldset legend="Hardware Acceleration (GPU)">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
-                    <label>Execution Provider:</label>
-                    <select className="pro-input">
-                      <option>CUDA (NVIDIA)</option>
-                      <option>DirectML (AMD / Intel)</option>
-                      <option>CPU Only</option>
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
-                    <label>Preferred GPU Device:</label>
-                    <select className="pro-input">
-                      {health?.gpuDevices && health.gpuDevices.length > 0 ? (
-                        health.gpuDevices.map((gpu, i) => (
-                          <option key={i} value={i}>
-                            Device {i}: {gpu}
-                          </option>
-                        ))
-                      ) : (
-                        <option>No GPU devices detected</option>
-                      )}
-                      <option value="auto">Auto-detect</option>
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-[150px_1fr] gap-2 items-center">
-                    <div className="flex items-center">
-                      <label>VRAM Allocation Limit:</label>
-                      <HelpIcon tooltip="Restricts how much video memory the model can allocate. Lower limits may prevent crashes on older GPUs but increase processing time." />
+            <div className="grid-dashboard">
+              <div className="col-span-8 space-y-sm flex flex-col">
+                <Fieldset legend="SYSTEM_PATHS" className="flex-1">
+                  <div className="space-y-md p-sm">
+                    <div className="grid grid-cols-[150px_1fr_100px] gap-sm items-center mb-md p-sm bg-bg-secondary border border-border-mid">
+                      <label className="text-secondary font-bold font-mono">
+                        REGISTRY_PATH:
+                      </label>
+                      <input
+                        type="text"
+                        value={appConfig.modelsDir}
+                        onChange={(e) =>
+                          setAppConfig((p) => ({
+                            ...p,
+                            modelsDir: e.target.value,
+                          }))
+                        }
+                        placeholder="Default (AppData)"
+                        className="input font-mono text-[10px] w-full"
+                      />
+                      <Button onClick={handleBrowseModels}>BROWSE</Button>
                     </div>
-                    <select className="pro-input">
-                      <option>No Limit</option>
-                      <option>8 GB</option>
-                      <option>6 GB</option>
-                      <option>4 GB</option>
-                      <option>2 GB</option>
-                    </select>
+                    <div className="grid grid-cols-[150px_1fr_100px] gap-sm items-center p-sm bg-bg-secondary border border-border-mid">
+                      <label className="text-secondary font-bold font-mono">
+                        CACHE_MOUNT:
+                      </label>
+                      <input
+                        type="text"
+                        value={appConfig.cacheDir}
+                        onChange={(e) =>
+                          setAppConfig((p) => ({
+                            ...p,
+                            cacheDir: e.target.value,
+                          }))
+                        }
+                        placeholder="Default (Temp)"
+                        className="input font-mono text-[10px] w-full"
+                      />
+                      <Button onClick={handleBrowseCache}>BROWSE</Button>
+                    </div>
                   </div>
-                </div>
-              </Fieldset>
+                </Fieldset>
+              </div>
 
-              <Fieldset legend="Appearance">
-                <div className="grid grid-cols-[150px_1fr] gap-2 items-center mb-2">
-                  <label>UI Theme:</label>
-                  <select
-                    value={theme}
-                    onChange={(e) => setTheme(e.target.value)}
-                    className="pro-input"
+              <div className="col-span-4 space-y-sm flex flex-col">
+                <Fieldset legend="HARDWARE_ACCEL">
+                  <div className="space-y-md p-xs">
+                    <Select
+                      label="EXEC_PROVIDER:"
+                      value="CUDA (NVIDIA)"
+                      options={[
+                        "CUDA (NVIDIA)",
+                        "DirectML (AMD / Intel)",
+                        "CPU Only",
+                      ]}
+                      onChange={() => {}}
+                    />
+
+                    <Select
+                      label="PREFERRED_DEVICE:"
+                      value="0"
+                      options={
+                        health?.gpuDevices?.map(
+                          (gpu, i) => `Device ${i}: ${gpu}`,
+                        ) || ["No GPU detected"]
+                      }
+                      onChange={() => {}}
+                    />
+
+                    <Select
+                      label="VRAM_LIMIT:"
+                      value="No Limit"
+                      options={["No Limit", "8 GB", "6 GB", "4 GB", "2 GB"]}
+                      onChange={() => {}}
+                    />
+                  </div>
+                </Fieldset>
+
+                <div className="flex flex-col gap-sm mt-auto justify-end">
+                  <Button
+                    onClick={handleApplySettings}
+                    variant="primary"
+                    className="py-md w-full"
                   >
-                    <option value="theme-classic">
-                      Classic Dark (PrismSplit)
-                    </option>
-                    <option value="theme-win95">Win95 Gray</option>
-                    <option value="theme-cyberpunk">Cyberpunk Neons</option>
-                    <option value="theme-matrix">Terminal Matrix</option>
-                    <option value="theme-amber">Amber CRT</option>
-                    <option value="theme-crimson">Blood Red</option>
-                    <option value="theme-deepblue">Midnight Blue</option>
-                  </select>
-                </div>
-              </Fieldset>
-
-              <Fieldset legend="System Paths">
-                <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center mb-2">
-                  <label>Model Registry Path:</label>
-                  <input
-                    type="text"
-                    value={appConfig.modelsDir}
-                    onChange={(e) =>
-                      setAppConfig((p) => ({ ...p, modelsDir: e.target.value }))
+                    COMMIT_CHANGES
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      setAppConfig({ modelsDir: "", cacheDir: "" })
                     }
-                    placeholder="Default (AppData)"
-                    className="pro-input"
-                  />
-                  <ProButton label="Browse..." onClick={handleBrowseModels} />
+                    className="w-full"
+                  >
+                    RESTORE_DEFAULTS
+                  </Button>
                 </div>
-                <div className="grid grid-cols-[150px_1fr_80px] gap-2 items-center">
-                  <label>Temporary Cache:</label>
-                  <input
-                    type="text"
-                    value={appConfig.cacheDir}
-                    onChange={(e) =>
-                      setAppConfig((p) => ({ ...p, cacheDir: e.target.value }))
-                    }
-                    placeholder="Default (Temp)"
-                    className="pro-input"
-                  />
-                  <ProButton label="Browse..." onClick={handleBrowseCache} />
-                </div>
-              </Fieldset>
-
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={handleApplySettings}
-                  className="bg-() text-() px-6 py-2 border-2 border-t-() border-l-() border-b-() border-r-() active:border-t-() active:border-l-() active:border-b-() active:border-r-()"
-                >
-                  Apply & Scan
-                </button>
-                <button
-                  onClick={() => setAppConfig({ modelsDir: "", cacheDir: "" })}
-                  className="bg-() text-() px-6 py-2 border-2 border-t-() border-l-() border-b-() border-r-() active:border-t-() active:border-l-() active:border-b-() active:border-r-()"
-                >
-                  Reset Defaults
-                </button>
               </div>
             </div>
           )}
         </div>
+      </main>
 
-        {/* Status Bar */}
-        <div className="bg-(--bg-panel) border-t-2 border-(--border-chassis) px-2 py-1 text-[10px] text-(--text-subtext) flex justify-between">
-          <div>
-            {isProcessing
-              ? "Processing audio buffer..."
-              : isPreviewing
-                ? "Generating preview..."
-                : "Ready"}
+      {/* Output Console Panel */}
+      <LogConsole logs={log} onClear={() => setLog([])} />
+
+      {/* Status Bar */}
+      <div className="status-bar">
+        <div className="flex items-center gap-md">
+          <div className="flex items-center gap-xs">
+            <div
+              className={`w-2 h-2 ${isProcessing ? "bg-accent-green animate-pulse" : "bg-accent-blue"}`}
+            ></div>
+            <span>{isProcessing ? "ENGINE_BUSY" : "ENGINE_READY"}</span>
           </div>
-          <div>
+          <span>
+            {isProcessing ? "Separating audio buffer..." : "Awaiting task..."}
+          </span>
+        </div>
+        <div className="flex items-center gap-md">
+          <span>
             {health?.gpuDevices && health.gpuDevices.length > 0
-              ? `GPU: ${health.gpuDevices[0].substring(0, 20)}...`
-              : "GPU: READY"}
-          </div>
+              ? `HW_ACCEL: ${health.gpuDevices[0].substring(0, 24)}`
+              : "HW_ACCEL: NONE"}
+          </span>
+          <span className="text-accent-green">
+            UTC: {new Date().toISOString().split("T")[1].split(".")[0]}
+          </span>
         </div>
       </div>
-
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .theme-classic {
-          --bg-outer: #383838;
-          --bg-panel: #404040;
-          --bg-titlebar: #2b2b36;
-          --bg-toolbar: #484848;
-          --bg-workspace: #303030;
-          --bg-input: #1e1e1e;
-          --bg-input-alt: #252525;
-          --bg-console: #000000;
-          --bg-btn: #4a4a4a;
-          --bg-btn-active: #404040;
-          --bg-btn-hover: #505050;
-          --border-hilite: #666666;
-          --border-hilite-subtle: #555555;
-          --border-shadow: #222222;
-          --border-shadow-deep: #111111;
-          --border-chassis: #1a1a1a;
-          --border-fieldset: #2a2a2a;
-          --border-fieldset-subtle: #5a5a5a;
-          --border-subtle: #333333;
-          --accent-glow: #00ff00;
-          --accent-border: #00aa00;
-          --accent-secondary: #4488ff;
-          --text-main: #d4d4d4;
-          --text-bright: #ffffff;
-          --text-muted: #888888;
-          --text-subtext: #aaaaaa;
-        }
-
-        .theme-win95 {
-          --bg-outer: #008080;
-          --bg-panel: #c0c0c0;
-          --bg-titlebar: #000080;
-          --bg-toolbar: #c0c0c0;
-          --bg-workspace: #c0c0c0;
-          --bg-input: #ffffff;
-          --bg-input-alt: #f0f0f0;
-          --bg-console: #000000;
-          --bg-btn: #c0c0c0;
-          --bg-btn-active: #a0a0a0;
-          --bg-btn-hover: #cfcfcf;
-          --border-hilite: #ffffff;
-          --border-hilite-subtle: #dfdfdf;
-          --border-shadow: #808080;
-          --border-shadow-deep: #000000;
-          --border-chassis: #000000;
-          --border-fieldset: #808080;
-          --border-fieldset-subtle: #ffffff;
-          --border-subtle: #808080;
-          --accent-glow: #00ff00;
-          --accent-border: #008000;
-          --accent-secondary: #000080;
-          --text-main: #000000;
-          --text-bright: #000000; /* Windows 95 didn't have bright text in general except on dark bgs */
-          --text-muted: #808080;
-          --text-subtext: #000000;
-        }
-
-        .theme-win95 .text-\\[var\\(--text-bright\\)\\] {
-          color: #ffffff; /* We must force white for title bars */
-        }
-
-        .theme-cyberpunk {
-          --bg-outer: #0a0a1a;
-          --bg-panel: #111122;
-          --bg-titlebar: #220022;
-          --bg-toolbar: #1a1a33;
-          --bg-workspace: #0f0f1a;
-          --bg-input: #05050a;
-          --bg-input-alt: #080812;
-          --bg-console: #000000;
-          --bg-btn: #2a1a3a;
-          --bg-btn-active: #1a0a2a;
-          --bg-btn-hover: #3a2a4a;
-          --border-hilite: #ff00ff;
-          --border-hilite-subtle: #880088;
-          --border-shadow: #00ffff;
-          --border-shadow-deep: #008888;
-          --border-chassis: #00ffff;
-          --border-fieldset: #ff00ff;
-          --border-fieldset-subtle: #00ffff;
-          --border-subtle: #880088;
-          --accent-glow: #00ffff;
-          --accent-border: #008888;
-          --accent-secondary: #ff00ff;
-          --text-main: #e0e0ff;
-          --text-bright: #ffffff;
-          --text-muted: #8888aa;
-          --text-subtext: #aaaacc;
-        }
-
-        .theme-matrix {
-          --bg-outer: #000000;
-          --bg-panel: #001100;
-          --bg-titlebar: #002200;
-          --bg-toolbar: #001a00;
-          --bg-workspace: #000a00;
-          --bg-input: #000000;
-          --bg-input-alt: #000500;
-          --bg-console: #000000;
-          --bg-btn: #003300;
-          --bg-btn-active: #002200;
-          --bg-btn-hover: #004400;
-          --border-hilite: #00ff00;
-          --border-hilite-subtle: #00aa00;
-          --border-shadow: #005500;
-          --border-shadow-deep: #002200;
-          --border-chassis: #00ff00;
-          --border-fieldset: #00ff00;
-          --border-fieldset-subtle: #005500;
-          --border-subtle: #008800;
-          --accent-glow: #00ff00;
-          --accent-border: #00aa00;
-          --accent-secondary: #00ff00;
-          --text-main: #00cc00;
-          --text-bright: #00ff00;
-          --text-muted: #005500;
-          --text-subtext: #00aa00;
-        }
-
-        .theme-amber {
-          --bg-outer: #000000;
-          --bg-panel: #1a0f00;
-          --bg-titlebar: #331f00;
-          --bg-toolbar: #261700;
-          --bg-workspace: #0f0800;
-          --bg-input: #000000;
-          --bg-input-alt: #050200;
-          --bg-console: #000000;
-          --bg-btn: #331f00;
-          --bg-btn-active: #221500;
-          --bg-btn-hover: #442a00;
-          --border-hilite: #ffb000;
-          --border-hilite-subtle: #cc8c00;
-          --border-shadow: #664600;
-          --border-shadow-deep: #332300;
-          --border-chassis: #ffb000;
-          --border-fieldset: #ffb000;
-          --border-fieldset-subtle: #664600;
-          --border-subtle: #996900;
-          --accent-glow: #ffb000;
-          --accent-border: #cc8c00;
-          --accent-secondary: #ffb000;
-          --text-main: #ffcc66;
-          --text-bright: #ffb000;
-          --text-muted: #886622;
-          --text-subtext: #cc9933;
-        }
-
-        .theme-crimson {
-          --bg-outer: #1a0505;
-          --bg-panel: #2a0a0a;
-          --bg-titlebar: #3a0000;
-          --bg-toolbar: #220505;
-          --bg-workspace: #1f0808;
-          --bg-input: #0a0000;
-          --bg-input-alt: #110000;
-          --bg-console: #000000;
-          --bg-btn: #3a0808;
-          --bg-btn-active: #2a0000;
-          --bg-btn-hover: #4a1111;
-          --border-hilite: #ff3333;
-          --border-hilite-subtle: #aa2222;
-          --border-shadow: #550000;
-          --border-shadow-deep: #220000;
-          --border-chassis: #ff0000;
-          --border-fieldset: #ff3333;
-          --border-fieldset-subtle: #550000;
-          --border-subtle: #881111;
-          --accent-glow: #ff0000;
-          --accent-border: #aa0000;
-          --accent-secondary: #ff3333;
-          --text-main: #ffaaaa;
-          --text-bright: #ffffff;
-          --text-muted: #884444;
-          --text-subtext: #cc6666;
-        }
-
-        .theme-deepblue {
-          --bg-outer: #050a1a;
-          --bg-panel: #0a112a;
-          --bg-titlebar: #001a4a;
-          --bg-toolbar: #081533;
-          --bg-workspace: #080f22;
-          --bg-input: #000511;
-          --bg-input-alt: #000a1a;
-          --bg-console: #000000;
-          --bg-btn: #11224a;
-          --bg-btn-active: #08112a;
-          --bg-btn-hover: #1a3366;
-          --border-hilite: #3388ff;
-          --border-hilite-subtle: #2255aa;
-          --border-shadow: #002255;
-          --border-shadow-deep: #00112a;
-          --border-chassis: #3388ff;
-          --border-fieldset: #3388ff;
-          --border-fieldset-subtle: #002255;
-          --border-subtle: #114488;
-          --accent-glow: #00aaff;
-          --accent-border: #0066aa;
-          --accent-secondary: #3388ff;
-          --text-main: #aaccff;
-          --text-bright: #ffffff;
-          --text-muted: #5577aa;
-          --text-subtext: #88bbff;
-        }
-
-        .inset-border {
-          border: 2px solid;
-          border-top-color: var(--border-chassis);
-          border-left-color: var(--border-chassis);
-          border-bottom-color: var(--border-hilite-subtle);
-          border-right-color: var(--border-hilite-subtle);
-        }
-        .pro-input {
-          background-color: var(--bg-input);
-          color: var(--text-bright);
-          border: 2px solid;
-          border-top-color: var(--border-shadow-deep);
-          border-left-color: var(--border-shadow-deep);
-          border-bottom-color: var(--border-hilite-subtle);
-          border-right-color: var(--border-hilite-subtle);
-          padding: 2px 4px;
-          outline: none;
-        }
-        .pro-input:focus {
-          border-color: var(--accent-secondary);
-        }
-      `,
-        }}
-      />
     </div>
   );
 }

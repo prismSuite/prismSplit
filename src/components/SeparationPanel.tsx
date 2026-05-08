@@ -1,7 +1,7 @@
 // src/components/SeparationPanel.tsx
 import React from "react";
 import type { SeparationRequest } from "../lib/types";
-import { HelpIcon, ProButton, Fieldset } from "./shared"; // Assuming I extract them
+import { Button, Fieldset } from "./shared";
 
 type Props = {
   request: SeparationRequest;
@@ -10,36 +10,38 @@ type Props = {
   progress: number;
 };
 
-export function SeparationPanel({ request, onRun, isProcessing, progress }: Props) {
+export function SeparationPanel({
+  request,
+  onRun,
+  isProcessing,
+  progress,
+}: Props) {
   return (
-    <div className="separation-panel space-y-4">
+    <div className="separation-panel space-y-md">
       <Fieldset legend="Separation Task Control">
-         <div className="flex items-center gap-4">
-            <button
-              onClick={() => void onRun()}
-              disabled={isProcessing || !request.inputPath}
-              className={`font-bold py-3 px-8 outline-none transition-all ${
-                isProcessing
-                  ? "bg-() text-() border-2 border-()"
-                  : "bg-() text-() border-2 border-t-() border-l-() border-b-() border-r-() active:bg-()"
-              }`}
-            >
-              {isProcessing ? "PROCESSING..." : "START SEPARATION"}
-            </button>
+        <div className="flex items-center gap-md">
+          <Button
+            onClick={() => void onRun()}
+            disabled={isProcessing || !request.inputPath}
+            variant="primary"
+            className="py-3 px-8 text-lg shrink-0"
+          >
+            {isProcessing ? "PROCESSING..." : "START SEPARATION"}
+          </Button>
 
-            <div className="flex-1 flex flex-col justify-center bg-() border-2 border-() p-2 relative">
-               <div className="absolute top-1 left-2 text-[9px] text-[#666]">EXECUTION_FLOW</div>
-               <div className="w-full h-4 bg-() border border-[#000] mt-1 relative overflow-hidden">
-                 <div
-                   className="absolute top-0 left-0 h-full bg-() transition-all duration-200"
-                   style={{ width: `${progress}%` }}
-                 />
-                 <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center font-bold text-[10px] mix-blend-difference text-white">
-                   {progress.toFixed(1)}%
-                 </div>
-               </div>
+          <div className="flex-1 flex flex-col justify-center sunken-panel p-sm relative">
+            <div className="text-[9px] text-secondary mb-xs uppercase font-bold">
+              EXECUTION_FLOW
             </div>
-         </div>
+            <div className="progress-bar">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${progress}%` }}
+              />
+              <div className="progress-bar-text">{progress.toFixed(1)}%</div>
+            </div>
+          </div>
+        </div>
       </Fieldset>
     </div>
   );

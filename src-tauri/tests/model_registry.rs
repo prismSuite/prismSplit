@@ -1,6 +1,5 @@
 // src-tauri/tests/model_registry.rs
 use prismsplit::download_manager::sha256_file;
-use prismsplit::model_registry::load_catalog_from_str;
 use prismsplit::models::{EngineHealth, SetupStatus};
 use serde_json::json;
 use std::fs;

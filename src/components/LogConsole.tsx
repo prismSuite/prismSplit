@@ -1,6 +1,6 @@
 // src/components/LogConsole.tsx
 import React, { useRef, useEffect } from "react";
-import { Fieldset } from "./shared";
+import { Button } from "./shared";
 
 type Props = {
   logs: string[];
@@ -11,28 +11,37 @@ export function LogConsole({ logs, onClear }: Props) {
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    logEndRef.current?.scrollIntoView({ behavior: "instant" });
   }, [logs]);
 
   return (
-    <Fieldset legend="Engine Runtime Output">
-      <div className="flex justify-end mb-1">
-        <button
-          onClick={onClear}
-          className="bg-() text-() text-[9px] px-2 py-0.5 border-2 border-t-() border-l-() border-b-() border-r-() active:bg-()"
-        >
+    <div className="console-panel">
+      <div className="flex justify-between items-center bg-primary border-b-mid px-sm py-xs">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-secondary">
+          Engine Runtime Output
+        </span>
+        <Button onClick={onClear} className="text-[9px] px-sm py-0.5">
           CLEAR_BUFFER
-        </button>
+        </Button>
       </div>
-      <div className="bg-() font-[Courier,monospace] text-() text-[11px] p-3 h-48 overflow-y-auto border-2 border-t-() border-l-() border-b-() border-r-() shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
-        {logs.map((l, i) => (
-          <div key={i} className="mb-0.5 whitespace-pre-wrap">
-            <span className="opacity-50 select-none mr-2">[{i.toString().padStart(4, '0')}]</span>
-            {l}
-          </div>
-        ))}
+      <div className="sunken-panel flex-1 font-mono text-[10px] text-accent-green p-sm leading-tight">
+        {logs.map((l, i) => {
+          let colorClass = "text-accent-green";
+          if (l.includes("ERROR") || l.includes("ERR:"))
+            colorClass = "text-accent-red";
+          if (l.includes("WARN")) colorClass = "text-accent-yellow";
+
+          return (
+            <div key={i} className={`mb-0.5 whitespace-pre-wrap ${colorClass}`}>
+              <span className="opacity-40 select-none mr-2">
+                [{i.toString().padStart(4, "0")}]
+              </span>
+              {l}
+            </div>
+          );
+        })}
         <div ref={logEndRef} />
       </div>
-    </Fieldset>
+    </div>
   );
 }

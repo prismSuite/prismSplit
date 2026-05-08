@@ -61,8 +61,11 @@ impl ModelRegistry {
         }
     }
 
-    pub fn installed_model_path(&self, entry: &ModelCatalogEntry) -> PathBuf {
-        self.models_dir.lock().unwrap().join(&entry.filename)
+    pub fn installed_model_path(&self, entry: &ModelCatalogEntry) -> Result<PathBuf> {
+        self.models_dir
+            .lock()
+            .map(|dir| dir.join(&entry.filename))
+            .map_err(|_| anyhow::anyhow!("Failed to lock models_dir mutex"))
     }
 
     pub fn validate_downloadable(&self, entry: &ModelCatalogEntry) -> Result<()> {

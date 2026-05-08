@@ -1,56 +1,51 @@
-# engine/python/prismsplit_backends/mdx.py
+# engine/python/prismsplit_backends/demucs.py
 import json
 import os
 from typing import Tuple
 
 import librosa
 import numpy as np
-import onnxruntime as ort
 import soundfile as sf
+import torch
+from demucs.pretrained import get_model
 from prismsplit_protocol import progress_event
 
 from prismsplit_backends.base import BackendBase
 
 
-class MdxBackend(BackendBase):
-    name = "mdx"
-
-    def preprocess(self, audio: np.ndarray) -> np.ndarray:
-        """Normalize audio to [-1, 1]."""
-        max_val = np.max(np.abs(audio))
-        if max_val > 0:
-            audio = audio / max_val
-        return audio.astype(np.float32)
+class DemucsBackend(BackendBase):
+    name = "demucs"
 
     def run_inference(
-        self, audio: np.ndarray, model_path: str
+        self, audio: np.ndarray, model_name: str
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Separate audio into vocals and instrumental.
+        Separate audio using Demucs.
+        Returns (vocals, instrumental).
         """
-        # Ensure stereo
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # In UVR context, we might load a specific model path, but standard Demucs
+        # often uses name-based fetching. If model_path is a directory or weights file,
+        # get_model might need adaptation, but we stick to the plan's specification.
+        model = get_model(model_name).to(device)
+        model.eval()
+
+        # Ensure stereo tensor
         if audio.ndim == 1:
             audio = np.stack([audio, audio])
         elif audio.shape[0] != 2:
             audio = audio.T
 
-        # Preprocess
-        audio = self.preprocess(audio)
+        audio_tensor = torch.from_numpy(audio).float().to(device)
 
-        # Run inference
-        session = ort.InferenceSession(
-            model_path, providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
-        )
-        input_name = session.get_inputs()[0].name
-        output_names = [o.name for o in session.get_outputs()]
+        with torch.no_grad():
+            # Add batch dimension
+            sources = model(audio_tensor.unsqueeze(0))
 
-        ort_inputs = {input_name: np.expand_dims(audio, 0)}
-        ort_outs = session.run(output_names, ort_inputs)
-
-        # Process outputs
-        mask = ort_outs[0][0]  # Vocal mask
-        vocals = audio * mask
-        instrumental = audio * (1 - mask)
+        # Demucs htdemucs returns [drums, bass, other, vocals]
+        # Combine drums + bass + other = instrumental
+        vocals = sources[0, 3].cpu().numpy()
+        instrumental = (sources[0, 0] + sources[0, 1] + sources[0, 2]).cpu().numpy()
 
         return vocals, instrumental
 
@@ -63,16 +58,17 @@ class MdxBackend(BackendBase):
         if not input_path or not os.path.exists(input_path):
             raise ValueError(f"Input file not found: {input_path}")
 
-        if not model_path or not os.path.exists(model_path):
-            raise ValueError(f"Model file not found: {model_path}")
+        # The model name is typically inferred from the request or path.
+        # We will use "htdemucs" as default if not explicitly provided in the request
+        model_name = "htdemucs"
 
         # 1. Load Audio
         print(json.dumps(progress_event(job_id, "Loading audio", 20.0)))
         audio, sr = librosa.load(input_path, sr=44100, mono=False)
 
         # 2. Process
-        print(json.dumps(progress_event(job_id, "Running ONNX inference", 50.0)))
-        vocals, instrumental = self.run_inference(audio, model_path)
+        print(json.dumps(progress_event(job_id, "Running Demucs inference", 50.0)))
+        vocals, instrumental = self.run_inference(audio, model_name)
 
         # 3. Save Outputs
         print(json.dumps(progress_event(job_id, "Saving stems", 80.0)))

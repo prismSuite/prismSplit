@@ -1,7 +1,5 @@
 // src-tauri/tests/engine_bridge.rs
 use prismsplit::engine_bridge::parse_event_line;
-use prismsplit::job_manager::validate_request;
-use prismsplit::models::SeparationRequest;
 
 #[test]
 fn parse_event_line_reads_progress_message() {

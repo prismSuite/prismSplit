@@ -27,3 +27,5 @@ GEMINI.MD
 AGENTS.md
 .gemini/
 .claude/
+.agents/
+*-lock.json

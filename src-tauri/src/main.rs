@@ -138,7 +138,10 @@ async fn download_model(
         std::fs::create_dir_all(&*dir).map_err(|e| e.to_string())?;
     }
 
-    let destination = state.model_registry.installed_model_path(&entry);
+    let destination = state
+        .model_registry
+        .installed_model_path(&entry)
+        .map_err(|e| e.to_string())?;
     let temp_destination = destination.with_extension("download");
 
     println!("[INFO] Downloading to: {}", temp_destination.display());
@@ -208,7 +211,10 @@ async fn process_audio(
     let model_path = if let Some(lp) = &entry.local_path {
         PathBuf::from(lp)
     } else {
-        state.model_registry.installed_model_path(&entry)
+        state
+            .model_registry
+            .installed_model_path(&entry)
+            .map_err(|e| e.to_string())?
     };
 
     if !model_path.is_file() {
