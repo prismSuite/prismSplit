@@ -97,4 +97,38 @@ impl EngineBridge {
 
         Ok((events, child))
     }
+
+    pub async fn run_command_stream<F>(
+        &self,
+        command: &str,
+        payload: Value,
+        mut on_event: F,
+    ) -> Result<(EngineEvent, Child)>
+    where
+        F: FnMut(&EngineEvent) + Send + 'static,
+    {
+        let mut child = self.spawn_command(command, payload).await?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("Failed to capture engine stdout"))?;
+
+        let mut lines = BufReader::new(stdout).lines();
+
+        while let Some(line) = lines.next_line().await? {
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let event = parse_event_line(&line)?;
+            let is_terminal = matches!(event.event.as_str(), "result" | "error");
+            on_event(&event);
+
+            if is_terminal {
+                return Ok((event, child));
+            }
+        }
+
+        Err(anyhow!("Engine returned no terminal event"))
+    }
 }

@@ -1,5 +1,8 @@
 use anyhow::{bail, Context, Result};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
@@ -25,8 +28,8 @@ impl RuntimeManager {
     }
 
     pub async fn doctor(&self) -> Result<EngineHealth> {
-        let runtime_ready = self.bootstrap_python_path().is_some();
-        let dependencies_ready = self.paths.venv_python_executable().is_file();
+        let runtime_ready = self.bootstrap_python_available().await;
+        let dependencies_ready = self.engine_dependencies_ready().await;
         let model_catalog_ready = self.paths.manifest_catalog_path().is_file();
         let installed_model_count = if self.paths.models_dir.exists() {
             std::fs::read_dir(&self.paths.models_dir)?
@@ -83,6 +86,7 @@ impl RuntimeManager {
         let bootstrap_python = self
             .bootstrap_python_path()
             .ok_or_else(|| anyhow::anyhow!(self.missing_python_message()))?;
+        self.ensure_supported_python(&bootstrap_python).await?;
         completed_stages.push("resolvePython".into());
 
         if !self.paths.venv_python_executable().is_file() {
@@ -121,6 +125,28 @@ impl RuntimeManager {
         }
 
         Ok(())
+    }
+
+    async fn bootstrap_python_available(&self) -> bool {
+        match self.bootstrap_python_path() {
+            Some(path) if path.is_file() => true,
+            Some(path) if path == PathBuf::from("python") => self.command_exists("python").await,
+            Some(_) => false,
+            None => false,
+        }
+    }
+
+    async fn engine_dependencies_ready(&self) -> bool {
+        let venv_python = self.paths.venv_python_executable();
+        let engine_script = self.paths.installed_engine_script();
+
+        if !venv_python.is_file() || !engine_script.is_file() {
+            return false;
+        }
+
+        self.invoke_engine_doctor(&venv_python, &engine_script)
+            .await
+            .unwrap_or(false)
     }
 
     fn sync_engine_assets(&self) -> Result<()> {
@@ -233,10 +259,32 @@ impl RuntimeManager {
             );
         }
 
+        let bootstrap_status = Command::new(&venv_python)
+            .arg("-m")
+            .arg("pip")
+            .arg("install")
+            .arg("--upgrade")
+            .arg("pip")
+            .arg("setuptools")
+            .arg("wheel")
+            .status()
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to bootstrap pip/setuptools/wheel with {}",
+                    venv_python.display()
+                )
+            })?;
+
+        if !bootstrap_status.success() {
+            bail!("Failed to bootstrap PrismSplit Python packaging tools");
+        }
+
         let status = Command::new(&venv_python)
             .arg("-m")
             .arg("pip")
             .arg("install")
+            .arg("--no-build-isolation")
             .arg("-e")
             .arg(&self.paths.engine_dir)
             .status()
@@ -256,17 +304,95 @@ impl RuntimeManager {
     }
 
     async fn command_exists(&self, command: &str) -> bool {
+        let version_arg = match command {
+            "python" | "python.exe" => "--version",
+            _ => "-version",
+        };
+
         Command::new(command)
-            .arg("-version")
+            .arg(version_arg)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
             .await
             .map(|status| status.success())
             .unwrap_or(false)
     }
 
+    async fn ensure_supported_python(&self, python_exe: &Path) -> Result<()> {
+        let output = Command::new(python_exe)
+            .arg("-c")
+            .arg("import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .with_context(|| format!("Failed to query Python version from {}", python_exe.display()))?;
+
+        if !output.status.success() {
+            bail!(
+                "Failed to query Python version from {}: {}",
+                python_exe.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let supported = matches!(version.as_str(), "3.9" | "3.10" | "3.11");
+        if !supported {
+            bail!(
+                "PrismSplit's UVR backend currently requires Python 3.9, 3.10, or 3.11. Resolved {} at {}, which is unsupported for the current engine dependencies. Install a compatible Python and point PRISMSPLIT_DEV_PYTHON to it for local development.",
+                version,
+                python_exe.display()
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn invoke_engine_doctor(&self, python_exe: &Path, engine_script: &Path) -> Result<bool> {
+        let mut child = Command::new(python_exe)
+            .arg(engine_script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .with_context(|| {
+                format!(
+                    "Failed to spawn engine doctor with {} {}",
+                    python_exe.display(),
+                    engine_script.display()
+                )
+            })?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(br#"{"command":"doctor","payload":{"ping":true}}"#)
+                .await?;
+            stdin.write_all(b"\n").await?;
+        }
+
+        let output = child.wait_with_output().await?;
+        if !output.status.success() {
+            return Ok(false);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let Some(line) = stdout.lines().find(|line| !line.trim().is_empty()) else {
+            return Ok(false);
+        };
+
+        let value: Value = serde_json::from_str(line)?;
+        Ok(value
+            .get("payload")
+            .and_then(|payload| payload.get("ready"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    }
+
     fn missing_python_message(&self) -> String {
         format!(
-            "Embedded Python runtime is not available. Expected bundled runtime at {}. In local development you can set PRISMSPLIT_DEV_PYTHON to a Python executable.",
+            "Embedded Python runtime is not available. Expected bundled runtime at {}. In local development you can set PRISMSPLIT_DEV_PYTHON to a compatible Python 3.9, 3.10, or 3.11 executable.",
             self.paths.runtime_bootstrap_python().display()
         )
     }
