@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 # Dynamically add the 'uvr' directory to sys.path so vendored packages (like demucs) can be resolved
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -18,11 +19,77 @@ def parse_request(raw: str) -> dict:
     return json.loads(raw)
 
 
+def _import_status(module_name: str) -> dict[str, Any]:
+    try:
+        __import__(module_name)
+        return {"ok": True}
+    except Exception as exc:  # pragma: no cover - exercised through doctor payload
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _detect_backend_imports() -> dict[str, dict[str, Any]]:
+    return {
+        "numpy": _import_status("numpy"),
+        "soundfile": _import_status("soundfile"),
+        "librosa": _import_status("librosa"),
+        "onnxruntime": _import_status("onnxruntime"),
+        "torch": _import_status("torch"),
+    }
+
+
 def handle_doctor(payload: dict) -> dict:
+    backend_imports = _detect_backend_imports()
+    ready = all(result["ok"] for result in backend_imports.values())
     return {
         "event": "result",
         "message": "doctor_ok",
-        "payload": {"ping": payload.get("ping", False)},
+        "payload": {
+            "ping": payload.get("ping", False),
+            "python_version": sys.version.split()[0],
+            "uvr_path": str(UVR_DIR),
+            "backend_imports": backend_imports,
+            "ready": ready,
+        },
+    }
+
+
+def _read_catalog(catalog_path: str) -> list[dict[str, Any]]:
+    with open(catalog_path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, list):
+        raise ValueError("Catalog JSON must be a list of model entries")
+    return data
+
+
+def _is_installed(entry: dict[str, Any], models_dir: str | None) -> bool:
+    local_path = entry.get("localPath") or entry.get("local_path")
+    if isinstance(local_path, str) and local_path:
+        return os.path.isfile(local_path)
+
+    filename = entry.get("filename")
+    if not models_dir or not isinstance(filename, str) or not filename:
+        return False
+
+    return os.path.isfile(os.path.join(models_dir, filename))
+
+
+def handle_list_models(payload: dict) -> dict:
+    catalog_path = payload.get("catalog_path")
+    if not isinstance(catalog_path, str) or not catalog_path:
+        raise ValueError("catalog_path is required")
+
+    models_dir = payload.get("models_dir")
+    models = _read_catalog(catalog_path)
+    normalized = []
+    for entry in models:
+        item = dict(entry)
+        item["is_installed"] = _is_installed(item, models_dir)
+        normalized.append(item)
+
+    return {
+        "event": "result",
+        "message": "models_loaded",
+        "payload": {"models": normalized},
     }
 
 
@@ -60,6 +127,8 @@ def main():
 
             if command == "doctor":
                 response = handle_doctor(payload)
+            elif command == "list_models":
+                response = handle_list_models(payload)
             elif command == "separate":
                 response = handle_separate(payload)
             else:

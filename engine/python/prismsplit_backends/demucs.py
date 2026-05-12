@@ -11,6 +11,7 @@ from demucs.pretrained import get_model
 from prismsplit_protocol import progress_event
 
 from prismsplit_backends.base import BackendBase
+from prismsplit_backends.model_request import resolve_demucs_model_name
 
 
 class DemucsBackend(BackendBase):
@@ -58,9 +59,7 @@ class DemucsBackend(BackendBase):
         if not input_path or not os.path.exists(input_path):
             raise ValueError(f"Input file not found: {input_path}")
 
-        # The model name is typically inferred from the request or path.
-        # We will use "htdemucs" as default if not explicitly provided in the request
-        model_name = "htdemucs"
+        model_name = resolve_demucs_model_name(request)
 
         # 1. Load Audio
         print(json.dumps(progress_event(job_id, "Loading audio", 20.0)))
