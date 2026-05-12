@@ -304,26 +304,42 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Top Bar / Menu Bar */}
+      <div className="crt-overlay"></div>
+      {/* Polybar-style Top Bar */}
       <div className="top-bar">
-        <div className="text-primary font-bold tracking-tighter text-lg mr-md">
-          PRISMSPLIT // <span className="text-accent-green">V0.1.0-ALPHA</span>
+        <div className="flex items-center h-full">
+          <div className="polybar-module bg-accent-green-dark text-accent-green font-bold terminal-text">
+            PRISMSPLIT // V0.1.0-ALPHA
+          </div>
+          <div className="polybar-module p-0 flex h-full">
+            <NavButton
+              active={activeTab === "separate"}
+              onClick={() => setActiveTab("separate")}
+              label="[1] EXTRACTION"
+            />
+            <NavButton
+              active={activeTab === "models"}
+              onClick={() => setActiveTab("models")}
+              label="[2] REGISTRY"
+            />
+            <NavButton
+              active={activeTab === "settings"}
+              onClick={() => setActiveTab("settings")}
+              label="[3] CONFIG"
+            />
+          </div>
         </div>
-        <NavButton
-          active={activeTab === "separate"}
-          onClick={() => setActiveTab("separate")}
-          label="EXTRACTION"
-        />
-        <NavButton
-          active={activeTab === "models"}
-          onClick={() => setActiveTab("models")}
-          label="MODEL_REGISTRY"
-        />
-        <NavButton
-          active={activeTab === "settings"}
-          onClick={() => setActiveTab("settings")}
-          label="SYSTEM_CONFIG"
-        />
+        <div className="flex items-center h-full">
+          <div className="polybar-module-right px-md text-xs font-mono text-secondary">
+            RES:{" "}
+            {health?.gpuDevices && health.gpuDevices.length > 0
+              ? "CUDA_ENABLED"
+              : "CPU_ONLY"}
+          </div>
+          <div className="polybar-module-right bg-primary px-md text-accent-green font-mono font-bold">
+            {new Date().toISOString().split("T")[1].split(".")[0]}
+          </div>
+        </div>
       </div>
 
       {/* Main Content Workspace */}

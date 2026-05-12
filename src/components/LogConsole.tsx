@@ -17,14 +17,17 @@ export function LogConsole({ logs, onClear }: Props) {
   return (
     <div className="console-panel">
       <div className="flex justify-between items-center bg-primary border-b-mid px-sm py-xs">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-secondary">
-          Engine Runtime Output
-        </span>
+        <div className="flex items-center gap-xs">
+          <div className="w-1.5 h-1.5 bg-accent-red animate-pulse rounded-full"></div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-secondary">
+            TTY0 // Engine Output
+          </span>
+        </div>
         <Button onClick={onClear} className="text-[9px] px-sm py-0.5">
           CLEAR_BUFFER
         </Button>
       </div>
-      <div className="sunken-panel flex-1 font-mono text-[10px] text-accent-green p-sm leading-tight">
+      <div className="sunken-panel flex-1 font-mono text-[10px] text-accent-green p-sm leading-tight relative">
         {logs.map((l, i) => {
           let colorClass = "text-accent-green";
           if (l.includes("ERROR") || l.includes("ERR:"))
@@ -40,6 +43,7 @@ export function LogConsole({ logs, onClear }: Props) {
             </div>
           );
         })}
+        <div className="inline-block w-2 h-3 bg-accent-green animate-blink ml-1 align-middle"></div>
         <div ref={logEndRef} />
       </div>
     </div>
