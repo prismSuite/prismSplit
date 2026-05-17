@@ -170,6 +170,12 @@ impl RuntimeManager {
             self.paths.workspace_engine_models_dir()
         };
 
+        let source_uvr_dir = if source_engine_dir == self.paths.resource_dir {
+            self.paths.resource_dir.join("uvr")
+        } else {
+            self.paths.workspace_uvr_dir()
+        };
+
         let source_pyproject = if source_engine_dir == self.paths.resource_dir {
             self.paths.bundled_engine_pyproject()
         } else {
@@ -195,6 +201,10 @@ impl RuntimeManager {
             &self.paths.installed_engine_python_dir(),
         )?;
         Self::copy_dir_recursive(&source_models_dir, &self.paths.engine_dir.join("models"))?;
+
+        if source_uvr_dir.exists() {
+            Self::copy_dir_recursive(&source_uvr_dir, &self.paths.installed_uvr_dir())?;
+        }
 
         if source_pyproject.is_file() {
             std::fs::copy(

@@ -86,9 +86,7 @@ impl Backend {
                     .clone(),
             });
             let bridge = EngineBridge::new(python_exe, engine_script);
-            let (events, mut child) = bridge
-                .run_command_collect("list_models", payload)
-                .await?;
+            let (events, mut child) = bridge.run_command_collect("list_models", payload).await?;
             let _ = child.wait().await;
             let terminal = events
                 .last()
@@ -117,7 +115,11 @@ impl Backend {
         self.model_registry.load_catalog()
     }
 
-    pub async fn download_model<F>(&self, model_id: String, mut on_progress: F) -> Result<ModelCatalogEntry>
+    pub async fn download_model<F>(
+        &self,
+        model_id: String,
+        mut on_progress: F,
+    ) -> Result<ModelCatalogEntry>
     where
         F: FnMut(f32) + Send + 'static,
     {
@@ -136,12 +138,13 @@ impl Backend {
         let destination = self.model_registry.installed_model_path(&entry)?;
         let temp_destination = destination.with_extension("download");
 
-        if let Err(error) = download_file_with_progress(&entry.url, &temp_destination, move |downloaded, total| {
-            if total > 0 {
-                on_progress((downloaded as f32 / total as f32) * 100.0);
-            }
-        })
-        .await
+        if let Err(error) =
+            download_file_with_progress(&entry.url, &temp_destination, move |downloaded, total| {
+                if total > 0 {
+                    on_progress((downloaded as f32 / total as f32) * 100.0);
+                }
+            })
+            .await
         {
             let _ = std::fs::remove_file(&temp_destination);
             return Err(error);
@@ -217,7 +220,9 @@ impl Backend {
             "output_dir": output_dir,
         });
 
-        let (terminal, mut child) = bridge.run_command_stream("separate", payload, on_event).await?;
+        let (terminal, mut child) = bridge
+            .run_command_stream("separate", payload, on_event)
+            .await?;
         let _ = child.wait().await;
 
         match terminal.event.as_str() {
@@ -256,6 +261,7 @@ impl Backend {
         let client = reqwest::Client::builder()
             .user_agent("PrismSplit/0.1.0")
             .timeout(std::time::Duration::from_secs(10))
+            .http1_only()
             .build()?;
         let url = "https://raw.githubusercontent.com/TRvlvr/application_data/main/filelists/download_checks.json";
         let response = client.get(url).send().await?;
@@ -296,10 +302,15 @@ impl Backend {
             }
         }
 
-        if let Some(demucs_list) = data.get("demucs_download_list").and_then(|value| value.as_object()) {
+        if let Some(demucs_list) = data
+            .get("demucs_download_list")
+            .and_then(|value| value.as_object())
+        {
             for (name, files) in demucs_list {
                 if let Some(files_obj) = files.as_object() {
-                    if let Some((filename, url)) = files_obj.iter().find(|(key, _)| key.ends_with(".th")) {
+                    if let Some((filename, url)) =
+                        files_obj.iter().find(|(key, _)| key.ends_with(".th"))
+                    {
                         if let Some(url_str) = url.as_str() {
                             let id = format!("demucs_{}", filename.replace('.', "_"));
                             new_entries.push(ModelCatalogEntry {
@@ -327,8 +338,14 @@ impl Backend {
 
         let mut current_catalog = self.model_registry.load_catalog().unwrap_or_default();
         let new_entries = Arc::new(new_entries);
-        let current_catalog_ids: Vec<String> = current_catalog.iter().map(|entry| entry.id.clone()).collect();
-        let current_catalog_filenames: Vec<String> = current_catalog.iter().map(|entry| entry.filename.clone()).collect();
+        let current_catalog_ids: Vec<String> = current_catalog
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect();
+        let current_catalog_filenames: Vec<String> = current_catalog
+            .iter()
+            .map(|entry| entry.filename.clone())
+            .collect();
         let mut entries_to_process = Vec::new();
 
         for entry in new_entries.iter() {
@@ -410,7 +427,10 @@ impl Backend {
         let mut added_count = 0;
         let mut current_catalog = self.model_registry.load_catalog().unwrap_or_default();
 
-        for entry in walkdir::WalkDir::new(scan_path).into_iter().filter_map(|entry| entry.ok()) {
+        for entry in walkdir::WalkDir::new(scan_path)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+        {
             let file_path = entry.path();
             if file_path.is_file() {
                 let extension = file_path
@@ -418,7 +438,11 @@ impl Backend {
                     .and_then(|value| value.to_str())
                     .unwrap_or("")
                     .to_lowercase();
-                if extension == "onnx" || extension == "pth" || extension == "th" || extension == "ckpt" {
+                if extension == "onnx"
+                    || extension == "pth"
+                    || extension == "th"
+                    || extension == "ckpt"
+                {
                     if let Ok(hash) = md5_file(file_path) {
                         let mut model_name = file_path
                             .file_stem()
@@ -434,12 +458,14 @@ impl Backend {
                         if let Some(info) = mdx_data.get(&hash) {
                             backend = "mdx";
                             if let Some(stem) = info.get("primary_stem") {
-                                model_name = format!("{} ({})", model_name, stem.as_str().unwrap_or(""));
+                                model_name =
+                                    format!("{} ({})", model_name, stem.as_str().unwrap_or(""));
                             }
                         } else if let Some(info) = vr_data.get(&hash) {
                             backend = "vr";
                             if let Some(stem) = info.get("primary_stem") {
-                                model_name = format!("{} ({})", model_name, stem.as_str().unwrap_or(""));
+                                model_name =
+                                    format!("{} ({})", model_name, stem.as_str().unwrap_or(""));
                             }
                         }
 
@@ -452,7 +478,9 @@ impl Backend {
                                 output_kind: "vocals_instrumental".into(),
                                 url: String::new(),
                                 sha256: "replace-with-real-sha256".into(),
-                                size_bytes: std::fs::metadata(file_path).map(|metadata| metadata.len()).unwrap_or(0),
+                                size_bytes: std::fs::metadata(file_path)
+                                    .map(|metadata| metadata.len())
+                                    .unwrap_or(0),
                                 filename: file_path
                                     .file_name()
                                     .and_then(|name| name.to_str())

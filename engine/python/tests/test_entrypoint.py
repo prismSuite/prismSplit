@@ -78,6 +78,7 @@ class TestEntrypoint(unittest.TestCase):
                 handle.write(b"dummy")
 
             catalog_path = os.path.join(tmp_dir, "catalog.json")
+            local_model_path = str(local_model).replace("\\", "\\\\")
             with open(catalog_path, "w", encoding="utf-8") as handle:
                 handle.write(
                     f"""
@@ -92,7 +93,7 @@ class TestEntrypoint(unittest.TestCase):
                         "sizeBytes": 10,
                         "filename": "ignored.onnx",
                         "version": "local",
-                        "localPath": "{local_model.replace("\\", "\\\\")}"
+                        "localPath": "{local_model_path}"
                       }}
                     ]
                     """

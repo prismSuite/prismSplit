@@ -69,4 +69,9 @@ pub struct DownloadProgressEvent {
 pub struct AppConfig {
     pub models_dir: Option<String>,
     pub cache_dir: Option<String>,
+    pub last_input_file: Option<String>,
+    pub last_output_dir: Option<String>,
+    pub last_selected_model: Option<String>,
+    pub last_quality: Option<String>,
+    pub last_export_format: Option<String>,
 }

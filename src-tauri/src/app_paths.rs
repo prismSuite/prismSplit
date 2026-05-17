@@ -63,8 +63,16 @@ impl AppPaths {
         self.workspace_engine_dir().join("pyproject.toml")
     }
 
+    pub fn workspace_uvr_dir(&self) -> PathBuf {
+        self.workspace_engine_dir().join("..").join("uvr")
+    }
+
     pub fn installed_engine_python_dir(&self) -> PathBuf {
         self.engine_dir.join("python")
+    }
+
+    pub fn installed_uvr_dir(&self) -> PathBuf {
+        self.root.join("uvr")
     }
 
     pub fn installed_engine_script(&self) -> PathBuf {

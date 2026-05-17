@@ -51,6 +51,7 @@ where
     let client = reqwest::Client::builder()
         .user_agent("PrismSplit/0.1.0")
         .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout for large models
+        .http1_only()
         .build()?;
 
     let response = client.get(url).send().await?;

@@ -213,6 +213,47 @@ impl PrismSplitApp {
         });
     }
 
+    fn auto_save_config(&mut self) {
+        let mut config = self.state.config.clone();
+        let mut changed = false;
+
+        let input = if self.state.input_file.is_empty() { None } else { Some(self.state.input_file.clone()) };
+        if config.last_input_file != input {
+            config.last_input_file = input;
+            changed = true;
+        }
+
+        let output = if self.state.output_dir.is_empty() { None } else { Some(self.state.output_dir.clone()) };
+        if config.last_output_dir != output {
+            config.last_output_dir = output;
+            changed = true;
+        }
+
+        let model = if self.state.selected_model.is_empty() { None } else { Some(self.state.selected_model.clone()) };
+        if config.last_selected_model != model {
+            config.last_selected_model = model;
+            changed = true;
+        }
+
+        if config.last_quality != Some(self.state.quality.clone()) {
+            config.last_quality = Some(self.state.quality.clone());
+            changed = true;
+        }
+
+        if config.last_export_format != Some(self.state.export_format.clone()) {
+            config.last_export_format = Some(self.state.export_format.clone());
+            changed = true;
+        }
+
+        if changed {
+            self.state.config = config.clone();
+            let backend = Arc::clone(&self.backend);
+            self.runtime.spawn(async move {
+                let _ = backend.update_config(config);
+            });
+        }
+    }
+
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|input| input.raw.dropped_files.clone());
         if dropped.is_empty() {
@@ -234,7 +275,22 @@ impl PrismSplitApp {
         while let Ok(message) = self.state.rx.try_recv() {
             match message {
                 AppMsg::ConfigLoaded(config) => {
-                    self.state.config = config;
+                    self.state.config = config.clone();
+                    if let Some(val) = config.last_input_file {
+                        self.state.input_file = val;
+                    }
+                    if let Some(val) = config.last_output_dir {
+                        self.state.output_dir = val;
+                    }
+                    if let Some(val) = config.last_selected_model {
+                        self.state.selected_model = val;
+                    }
+                    if let Some(val) = config.last_quality {
+                        self.state.quality = val;
+                    }
+                    if let Some(val) = config.last_export_format {
+                        self.state.export_format = val;
+                    }
                 }
                 AppMsg::HealthLoaded(result) => {
                     self.state.is_initializing = false;
@@ -688,6 +744,8 @@ impl eframe::App for PrismSplitApp {
                 Tab::Settings => self.render_settings(ui),
             }
         });
+
+        self.auto_save_config();
 
         if self.state.is_processing || self.state.downloading_id.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));

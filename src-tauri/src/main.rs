@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
+    dotenvy::dotenv().ok();
+
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
