@@ -432,7 +432,7 @@ impl PrismSplitApp {
                     ));
                 }
                 if let Some(error) = &status.last_error {
-                    ui.colored_label(Color32::from_rgb(255, 99, 99), error);
+                    ui.colored_label(Color32::from_rgb(242, 139, 130), error);
                 }
             }
 
@@ -659,7 +659,7 @@ impl eframe::App for PrismSplitApp {
                         RichText::new("PRISMSPLIT // EGUi ALPHA")
                             .monospace()
                             .strong()
-                            .color(Color32::from_rgb(0, 255, 102)),
+                            .color(Color32::from_rgb(0, 210, 255)),
                     );
                     ui.separator();
 

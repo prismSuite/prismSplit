@@ -1,0 +1,8 @@
+{
+    "workbench.colorCustomizations": {
+        "editorHoverWidget.border": "#ffffff",
+        "statusBar.background": "#334e99",
+        "statusBar.foreground": "#ffffff",
+        "sash.hoverBorder": "#334e99"
+    }
+}

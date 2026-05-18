@@ -1,13 +1,18 @@
-# PrismSplit
-
----
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tauri](https://img.shields.io/badge/built%20with-Tauri-blue)](https://tauri.app/)
-[![Rust](https://img.shields.io/badge/powered%20by-Rust-orange)](https://www.rust-lang.org/)
-[![Python](https://img.shields.io/badge/engine-Python%203.10-blue)](https://www.python.org/)
-
-**PrismSplit** is a high-performance Windows desktop application designed for specialized audio separation. Primarily focused on **Karaoke Separation** (vocals/instrumentals), it combines the power of the Ultimate Vocal Remover (UVR) inference logic with a modern, lightweight orchestration layer written in Rust.
+<table border="0">
+  <tr>
+    <td valign="top">
+      <h1>PrismSplit</h1>
+      <p><strong>Industrial-Grade Audio Separation Platform</strong><br/>
+      <em>High-performance Windows desktop application for specialized karaoke extraction.</em></p>
+      <p>
+        <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+        <a href="https://tauri.app/"><img src="https://img.shields.io/badge/built%20with-Tauri-blue" alt="Tauri"></a>
+        <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/powered%20by-Rust-orange" alt="Rust"></a>
+        <a href="https://www.python.org/"><img src="https://img.shields.io/badge/engine-Python%203.10-blue" alt="Python"></a>
+      </p>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -22,12 +27,23 @@
 
 ---
 
-## 🛠️ Architecture
+## 🏗️ Architecture
 
 PrismSplit is split into two specialized layers:
 
 1.  **Orchestration (Rust + Tauri):** Manages the application lifecycle, process supervision, job scheduling, model registry, and high-speed file I/O.
 2.  **Inference (Python Engine):** A detached, minimal runner that executes the heavy mathematical lifting using optimized backends like ONNX Runtime and PyTorch.
+
+---
+
+## 📖 Documentation
+
+For a comprehensive technical breakdown, architectural ADRs, and operational guides, visit our official **[Wiki](docs/wiki/index.md)**.
+
+*   **[Technical Architecture](docs/wiki/architecture.md)**
+*   **[Development Guide](docs/wiki/development.md)**
+*   **[Brand & Design](docs/wiki/brand.md)**
+*   **[Agent SOP](docs/AGENT.md)**
 
 ---
 

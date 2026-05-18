@@ -16,12 +16,25 @@ from prismsplit_protocol import progress_event
 
 from prismsplit_backends.base import BackendBase
 
-# mdx.py is in engine/python/prismsplit_backends/ (3 levels deep from project root)
-# .parent is prismsplit_backends, .parent.parent is python, .parent.parent.parent is engine, .parent.parent.parent.parent is root
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-UVR_DIR = PROJECT_ROOT / "uvr"
-if str(UVR_DIR) not in sys.path:
-    sys.path.insert(0, str(UVR_DIR))
+# Try to use the shared helper to find/insert the vendored `uvr` directory
+try:
+    from uvr_utils import ensure_uvr_in_sys_path
+except Exception:
+    ensure_uvr_in_sys_path = None  # type: ignore
+
+UVR_DIR = None
+if ensure_uvr_in_sys_path:
+    try:
+        UVR_DIR = ensure_uvr_in_sys_path()
+    except Exception:
+        UVR_DIR = None
+
+if UVR_DIR is None:
+    # Fallback to the repo-relative guess (preserve previous behavior)
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+    UVR_DIR = PROJECT_ROOT / "uvr"
+    if str(UVR_DIR) not in sys.path:
+        sys.path.insert(0, str(UVR_DIR))
 
 from lib_v5.tfc_tdf_v3 import STFT
 

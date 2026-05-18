@@ -3,13 +3,27 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-# Dynamically add the 'uvr' directory to sys.path so vendored packages (like demucs) can be resolved
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-UVR_DIR = PROJECT_ROOT / "uvr"
-if str(UVR_DIR) not in sys.path:
-    sys.path.insert(0, str(UVR_DIR))
+# Robustly add the vendored 'uvr' directory (which contains `lib_v5`) to sys.path
+# so imports like `import lib_v5` work both in-source and in bundled installers.
+try:
+    from uvr_utils import ensure_uvr_in_sys_path
+except Exception:
+    ensure_uvr_in_sys_path = None  # type: ignore
+
+UVR_DIR: Optional[Path] = None
+if ensure_uvr_in_sys_path:
+    try:
+        UVR_DIR = ensure_uvr_in_sys_path()
+    except Exception:
+        UVR_DIR = None
+
+if UVR_DIR is None:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    UVR_DIR = PROJECT_ROOT / "uvr"
+    if str(UVR_DIR) not in sys.path:
+        sys.path.insert(0, str(UVR_DIR))
 
 from prismsplit_backends import get_backend
 from prismsplit_protocol import progress_event

@@ -2,7 +2,8 @@ use egui::{Align, Color32, Frame, Layout, RichText, Stroke, Ui};
 
 pub fn nav_button(ui: &mut Ui, active: bool, label: &str) -> bool {
     let text = if active {
-        RichText::new(label).strong().color(Color32::from_rgb(0, 255, 102))
+        // Monolith primary accent
+        RichText::new(label).strong().color(Color32::from_rgb(0, 210, 255))
     } else {
         RichText::new(label)
     };
@@ -12,8 +13,9 @@ pub fn nav_button(ui: &mut Ui, active: bool, label: &str) -> bool {
 
 pub fn fieldset<R>(ui: &mut Ui, legend: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
     let frame = Frame::group(ui.style())
-        .stroke(Stroke::new(1.0, Color32::from_rgb(70, 70, 70)))
-        .inner_margin(10.0);
+        // Monolith surface-6 / subtle border
+        .stroke(Stroke::new(1.0, Color32::from_rgb(58, 64, 85)))
+        .inner_margin(12.0);
 
     frame
         .show(ui, |ui| {
@@ -29,7 +31,8 @@ pub fn fieldset<R>(ui: &mut Ui, legend: &str, add_contents: impl FnOnce(&mut Ui)
 
 pub fn status_chip(ui: &mut Ui, label: &str, value: &str, accent: bool) {
     let color = if accent {
-        Color32::from_rgb(0, 255, 102)
+        // Monolith primary accent
+        Color32::from_rgb(0, 210, 255)
     } else {
         Color32::from_rgb(180, 187, 193)
     };
