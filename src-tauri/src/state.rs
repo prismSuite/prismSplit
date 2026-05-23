@@ -7,6 +7,7 @@ pub enum Tab {
     Separate,
     Models,
     Settings,
+    Suite,
 }
 
 #[derive(Debug)]
@@ -23,6 +24,8 @@ pub enum AppMsg {
     ProcessProgress { message: String, percent: f32 },
     ProcessFinished(Result<ProcessAudioResponse, String>),
     Log(String),
+    CompanionProbed(bool, Option<String>),
+    CompanionLaunched(Result<u32, String>),
 }
 
 pub struct AppState {
@@ -45,6 +48,10 @@ pub struct AppState {
     pub is_dragging: bool,
     pub tx: Sender<AppMsg>,
     pub rx: Receiver<AppMsg>,
+    // Companion suite link state
+    pub companion_installed: bool,
+    pub companion_path: Option<String>,
+    pub companion_probing: bool,
 }
 
 impl AppState {
@@ -74,6 +81,9 @@ impl AppState {
             is_dragging: false,
             tx,
             rx,
+            companion_installed: false,
+            companion_path: None,
+            companion_probing: false,
         }
     }
 

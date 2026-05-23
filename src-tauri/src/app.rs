@@ -1,4 +1,5 @@
 use crate::backend::Backend;
+use crate::companion;
 use crate::engine_bridge::EngineEvent;
 use crate::panels::log_console;
 use crate::state::{AppMsg, AppState, Tab};
@@ -30,6 +31,7 @@ impl PrismSplitApp {
     fn refresh_boot_state(&self) {
         self.load_config();
         self.refresh_health();
+        self.probe_companion();
     }
 
     fn load_config(&self) {
@@ -38,6 +40,24 @@ impl PrismSplitApp {
         self.runtime.spawn(async move {
             let config = backend.load_config();
             let _ = tx.send(AppMsg::ConfigLoaded(config));
+        });
+    }
+
+    /// Probe for prismConsole companion in a background thread (non-blocking).
+    fn probe_companion(&self) {
+        let tx = self.state.tx.clone();
+        self.runtime.spawn_blocking(move || {
+            let status = companion::probe_companion();
+            let _ = tx.send(AppMsg::CompanionProbed(status.installed, status.path));
+        });
+    }
+
+    /// Launch prismConsole as a detached independent process.
+    fn launch_companion(&self) {
+        let tx = self.state.tx.clone();
+        self.runtime.spawn_blocking(move || {
+            let result = companion::launch_companion();
+            let _ = tx.send(AppMsg::CompanionLaunched(result));
         });
     }
 
@@ -406,6 +426,30 @@ impl PrismSplitApp {
                     }
                 }
                 AppMsg::Log(line) => self.state.push_log(line),
+                AppMsg::CompanionProbed(installed, path) => {
+                    self.state.companion_installed = installed;
+                    self.state.companion_path = path;
+                    self.state.companion_probing = false;
+                    if installed {
+                        self.state.push_log(
+                            "SUITE: prismConsole detected — companion link active.".to_string(),
+                        );
+                    }
+                }
+                AppMsg::CompanionLaunched(result) => match result {
+                    Ok(pid) => {
+                        self.state.push_log(format!(
+                            "SUITE: prismConsole launched (PID {}).",
+                            pid
+                        ));
+                    }
+                    Err(e) => {
+                        self.state.push_log(format!(
+                            "SUITE: Failed to launch prismConsole — {}",
+                            e
+                        ));
+                    }
+                },
             }
         }
     }
@@ -644,6 +688,209 @@ impl PrismSplitApp {
             });
         });
     }
+
+    fn render_suite(&mut self, ui: &mut egui::Ui) {
+        let brand_cyan = Color32::from_rgb(0, 210, 255);
+        let brand_amber = Color32::from_rgb(255, 180, 30);
+        let dim_text = Color32::from_rgb(140, 150, 170);
+        let surface_header = Color32::from_rgb(19, 23, 32);
+
+        // ── Suite Link Header ─────────────────────────────────────────────
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("▸ PRISMSUITE // COMPANION LINK")
+                    .monospace()
+                    .strong()
+                    .color(brand_cyan),
+            );
+            ui.separator();
+            let status_text = if self.state.companion_probing {
+                "PROBING..."
+            } else if self.state.companion_installed {
+                "LINKED ✓"
+            } else {
+                "NOT DETECTED"
+            };
+            let status_color = if self.state.companion_installed {
+                Color32::from_rgb(50, 200, 100)
+            } else {
+                brand_amber
+            };
+            ui.label(RichText::new(status_text).monospace().strong().color(status_color));
+        });
+
+        ui.add_space(12.0);
+
+        if self.state.companion_probing {
+            // ── Probing indicator ─────────────────────────────────────────
+            fieldset(ui, "DETECTION_NODE", |ui| {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(
+                        RichText::new("Probing companion application paths...")
+                            .monospace()
+                            .color(dim_text),
+                    );
+                });
+            });
+        } else if self.state.companion_installed {
+            // ── Companion Detected: Linked Panel ──────────────────────────
+            fieldset(ui, "COMPANION_STATUS", |ui| {
+                ui.colored_label(
+                    Color32::from_rgb(50, 200, 100),
+                    RichText::new("● PRISMSUITE COMPANION ACTIVE")
+                        .monospace()
+                        .strong(),
+                );
+                ui.add_space(4.0);
+                if let Some(path) = &self.state.companion_path {
+                    ui.label(
+                        RichText::new(format!("PATH: {}", path))
+                            .monospace()
+                            .small()
+                            .color(dim_text),
+                    );
+                }
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("prismConsole detected. Both applications share the same MonolithUI design language and can be used together for a complete AI-assisted audio production workflow.")
+                        .color(dim_text),
+                );
+            });
+
+            ui.add_space(8.0);
+
+            fieldset(ui, "COMPANION_ACTIONS", |ui| {
+                ui.horizontal(|ui| {
+                    let launch_btn = egui::Button::new(
+                        RichText::new("▶  LAUNCH PRISMCONSOLE")
+                            .monospace()
+                            .strong()
+                            .color(surface_header),
+                    )
+                    .fill(brand_cyan)
+                    .min_size(egui::vec2(240.0, 36.0));
+
+                    if ui.add(launch_btn).clicked() {
+                        self.launch_companion();
+                    }
+
+                    ui.add_space(8.0);
+
+                    let probe_btn = egui::Button::new(
+                        RichText::new("↻  RE-PROBE")
+                            .monospace()
+                            .color(dim_text),
+                    )
+                    .min_size(egui::vec2(100.0, 36.0));
+
+                    if ui.add(probe_btn).clicked() {
+                        self.state.companion_probing = true;
+                        self.probe_companion();
+                    }
+                });
+            });
+
+            ui.add_space(16.0);
+
+            // Channel info panel
+            fieldset(ui, "SUITE_CHANNEL_MAP", |ui| {
+                ui.label(
+                    RichText::new("INTER-APP ROUTING")
+                        .monospace()
+                        .strong()
+                        .color(dim_text),
+                );
+                ui.add_space(6.0);
+
+                let rows = [
+                    ("CHANNEL 01", "prismSplit → Audio Separation Engine", "ACTIVE"),
+                    ("CHANNEL 02", "prismConsole → AI Agent Orchestrator", "STANDBY"),
+                    ("CHANNEL 03", "prismSuite → Shared Data Bus", "LINKED"),
+                ];
+                for (ch, desc, status) in &rows {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(*ch).monospace().color(brand_cyan));
+                        ui.separator();
+                        ui.label(RichText::new(*desc).monospace().color(dim_text).small());
+                        ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+                            let col = if *status == "ACTIVE" {
+                                Color32::from_rgb(50, 200, 100)
+                            } else if *status == "LINKED" {
+                                brand_cyan
+                            } else {
+                                dim_text
+                            };
+                            ui.label(RichText::new(*status).monospace().small().color(col));
+                        });
+                    });
+                }
+            });
+        } else {
+            // ── Companion Not Installed: Commercial Vitrine ────────────────
+            fieldset(ui, "NOT_INSTALLED", |ui| {
+                ui.colored_label(
+                    brand_amber,
+                    RichText::new("⚠  PRISMCONSOLE NOT DETECTED")
+                        .monospace()
+                        .strong(),
+                );
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new("The companion application prismConsole was not found on this system. Install it to unlock the complete prismSuite experience.")
+                        .color(dim_text),
+                );
+            });
+
+            ui.add_space(10.0);
+
+            // Commercial feature matrix
+            fieldset(ui, "PRISMCONSOLE_FEATURES", |ui| {
+                ui.label(
+                    RichText::new("prismConsole — AI Orchestration Platform")
+                        .monospace()
+                        .strong()
+                        .color(brand_cyan),
+                );
+                ui.add_space(8.0);
+
+                let features = [
+                    ("✦", "Multi-agent AI orchestration (GPT-4, Claude, Gemini)"),
+                    ("✦", "Real-time REAPER DAW bridge and scriptable automation"),
+                    ("✦", "Plugin execution pipeline with workflow builder"),
+                    ("✦", "MCP server integration for tool use by AI agents"),
+                    ("✦", "Persistent chat sessions with tool-use memory"),
+                    ("✦", "Audio buffer visualization with live FFT analysis"),
+                    ("✦", "Suite-compatible: shares the same MonolithUI design language"),
+                ];
+                for (bullet, text) in &features {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(*bullet).color(brand_cyan).monospace());
+                        ui.label(RichText::new(*text).color(dim_text));
+                    });
+                }
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(8.0);
+
+                ui.horizontal(|ui| {
+                    let probe_btn = egui::Button::new(
+                        RichText::new("↻  DETECT AGAIN").monospace().color(dim_text),
+                    )
+                    .min_size(egui::vec2(140.0, 32.0));
+
+                    if ui.add(probe_btn).clicked() {
+                        self.state.companion_probing = true;
+                        self.probe_companion();
+                    }
+                });
+            });
+        }
+
+        ui.add_space(8.0);
+    }
 }
 
 impl eframe::App for PrismSplitApp {
@@ -671,6 +918,14 @@ impl eframe::App for PrismSplitApp {
                     }
                     if nav_button(ui, self.state.active_tab == Tab::Settings, "[3] CONFIG") {
                         self.state.active_tab = Tab::Settings;
+                    }
+                    if nav_button(ui, self.state.active_tab == Tab::Suite, "[4] SUITE") {
+                        if self.state.active_tab != Tab::Suite {
+                            // Re-probe companion when switching to this tab
+                            self.state.companion_probing = true;
+                            self.probe_companion();
+                        }
+                        self.state.active_tab = Tab::Suite;
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
@@ -742,6 +997,7 @@ impl eframe::App for PrismSplitApp {
                 Tab::Separate => self.render_separation(ui),
                 Tab::Models => self.render_models(ui),
                 Tab::Settings => self.render_settings(ui),
+                Tab::Suite => self.render_suite(ui),
             }
         });
 

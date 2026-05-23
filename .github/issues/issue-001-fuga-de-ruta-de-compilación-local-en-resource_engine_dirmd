@@ -1,0 +1,38 @@
+# ISSUE-001 // Fuga de ruta de compilación local en resource_engine_dir
+
+**Type**: Bug
+**Severity**: Alta
+**Component**: Core/Engine
+
+---
+
+## 1. Descripción del Problema
+La función 'resource_engine_dir()' utiliza la macro 'env!("CARGO_MANIFEST_DIR")' para resolver el motor de separación. Dado que esta macro se evalúa a nivel de compilación, incrusta de forma permanente una cadena rígida que apunta a la ruta local del computador del desarrollador. Al empaquetar y distribuir la aplicación a usuarios finales, esta ruta fallará o buscará directorios de desarrollo inexistentes, impidiendo la inicialización del motor de separación de audio (UVR).
+
+## 2. Ubicación del Código
+- **Archivo**: [main.rs](file:///K:/source/repos/prismSplit/src-tauri/src/main.rs)
+- **Línea(s)**: 60-68
+
+## 3. Comportamiento Esperado vs. Comportamiento Actual
+- **Actual**: La función 'resource_engine_dir()' utiliza la macro 'env!("CARGO_MANIFEST_DIR")' para resolver el motor de separación. Dado que esta macro se evalúa a nivel de compilación, incrusta de forma permanente una cadena rígida que apunta a la ruta local del computador del desarrollador. Al empaquetar y distribuir la aplicación a usuarios finales, esta ruta fallará o buscará directorios de desarrollo inexistentes, impidiendo la inicialización del motor de separación de audio (UVR).
+- **Esperado**: Determinar las rutas de recursos de manera dinámica en tiempo de ejecución, en relación al directorio del ejecutable actual (`std::env::current_exe()`) o bajo carpetas de datos de sistema.
+
+## 4. Pasos para Reproducir / Escenario Crítico
+1. Compilar el binario en una máquina A.
+2. Copiar e instalar el binario compilado en una máquina B que carece de la misma estructura de directorios.
+3. Ejecutar una separación de audio y observar el crasheo por fallo de resolución de directorio.
+
+## 5. Propuesta de Solución
+Reescribir la resolución para que se base dinámicamente en el directorio del ejecutable de Rust actual:
+```rust
+fn resource_engine_dir() -> PathBuf {
+    let exe_path = std::env::current_exe().unwrap_or_default();
+    let exe_dir = exe_path.parent().unwrap_or(&exe_path);
+    let run_engine = exe_dir.join("engine");
+    if run_engine.is_dir() {
+        run_engine
+    } else {
+        exe_dir.to_path_buf()
+    }
+}
+```

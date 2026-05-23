@@ -1,6 +1,7 @@
 pub mod app_paths;
 pub mod app;
 pub mod backend;
+pub mod companion;
 pub mod download_manager;
 pub mod engine_bridge;
 pub mod job_manager;
