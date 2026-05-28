@@ -62,11 +62,13 @@ def find_uvr_dir() -> Optional[Path]:
     # 3) cwd
     candidates.append(Path.cwd() / "uvr")
 
-    # 4) sys.executable neighbors
+    # 4) sys.executable neighbors (e.g. from venv runtime paths)
     try:
         exe = Path(sys.executable).resolve()
         candidates.append(exe.parent / "uvr")
         candidates.append(exe.parent.parent / "uvr")
+        candidates.append(exe.parent.parent.parent / "uvr")
+        candidates.append(exe.parent.parent.parent.parent / "uvr")
     except Exception:
         pass
 

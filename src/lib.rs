@@ -1,0 +1,14 @@
+pub mod app_paths;
+pub mod app;
+pub mod backend;
+pub mod download_manager;
+pub mod engine_bridge;
+pub mod job_manager;
+pub mod model_registry;
+pub mod models;
+pub mod panels;
+pub mod runtime_manager;
+pub mod state;
+pub mod theme;
+pub mod widgets;
+pub mod preview;

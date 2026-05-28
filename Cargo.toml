@@ -1,3 +1,36 @@
-[workspace]
-members = ["src-tauri"]
-resolver = "2"
+[package]
+name = "prismsplit"
+version = "0.1.0"
+description = "PrismSplit Stem Separator"
+authors = ["PrismSplit"]
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+async-trait = "0.1"
+futures = "0.3"
+walkdir = "2.3"
+dirs = "6.0"
+dircpy = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "stream",
+    "rustls-tls",
+] }
+sha2 = "0.10"
+md-5 = "0.10"
+futures-util = "0.3"
+tokio-util = "0.7"
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "2.0"
+eframe = { version = "0.28", default-features = true, features = ["persistence"] }
+egui = "0.28"
+rfd = "0.14"
+dotenvy = "0.15.7"
+rodio = { version = "0.19", default-features = false, features = ["wav", "flac", "minimp3", "symphonia-all"] }
+
+[dev-dependencies]
+tempfile = "3"

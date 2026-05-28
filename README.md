@@ -1,116 +1,97 @@
-<table border="0">
-  <tr>
-    <td valign="top">
-      <h1>PrismSplit</h1>
-      <p><strong>Industrial-Grade Audio Separation Platform</strong><br/>
-      <em>High-performance Windows desktop application for specialized karaoke extraction.</em></p>
-      <p>
-        <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-        <a href="https://tauri.app/"><img src="https://img.shields.io/badge/built%20with-Tauri-blue" alt="Tauri"></a>
-        <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/powered%20by-Rust-orange" alt="Rust"></a>
-        <a href="https://www.python.org/"><img src="https://img.shields.io/badge/engine-Python%203.10-blue" alt="Python"></a>
-      </p>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <img src="src/assets/logo.svg" width="600" alt="prismSplit Logo" />
+  
+  <p><strong>Industrial-Grade Audio Separation & Stem Isolation Platform</strong></p>
+  
+  <p>
+    <a href="https://v2.tauri.app/"><img src="https://img.shields.io/badge/Tauri-v2.0-24C8DB?style=flat-square&logo=tauri&logoColor=white" alt="Tauri" /></a>
+    <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-Stable-orange?style=flat-square&logo=rust&logoColor=white" alt="Rust" /></a>
+    <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Engine-Python%203.10-blue?style=flat-square&logo=python&logoColor=white" alt="Python" /></a>
+    <a href="https://onnxruntime.ai/"><img src="https://img.shields.io/badge/Inference-ONNX%20%2F%20PyTorch-475569?style=flat-square&logo=onnx&logoColor=white" alt="Inference" /></a>
+  </p>
+</div>
 
 ---
 
-## ⚡ Superpowers
+## 📖 Descripción General / Overview
 
-- **Multi-Engine Support:** Full compatibility with **MDX-Net**, **VR Architecture**, **Demucs (v1-v4)**, and **Roformer** models.
-- **Smart Catalog Sync:** One-click synchronization with official UVR model servers to access hundreds of pre-trained weights.
-- **Zero-Copy Local Scan:** Already have models? Scan your local directories (e.g., `D:/uvr/models`). PrismSplit identifies them via MD5 hash and uses them in-place without duplicating data.
-- **Embedded Runtime:** Automatically manages its own isolated Python environment—no more "Dependency Hell".
-- **Real-Time Telemetry:** Streamed inference logs and byte-accurate download progress bars.
-- **Hardware Accelerated:** Support for NVIDIA (CUDA), AMD/Intel (DirectML), and optimized CPU inference.
+**prismSplit** es una plataforma de escritorio de grado industrial y alto rendimiento diseñada para la **separación especializada de audio y el aislamiento de stems** (voces, instrumentales, batería, bajo y otros componentes armónicos).
 
----
+Como parte de la marca federada **prismSuite**, la aplicación adopta la filosofía visual de **Dark Brutalism Skeuomórfico (MonolithUI)**: un chasis con biseles metálicos, tornillería real y un osciloscopio espectral de precisión en tiempo real. 
 
-## 🏗️ Architecture
-
-PrismSplit is split into two specialized layers:
-
-1.  **Orchestration (Rust + Tauri):** Manages the application lifecycle, process supervision, job scheduling, model registry, and high-speed file I/O.
-2.  **Inference (Python Engine):** A detached, minimal runner that executes the heavy mathematical lifting using optimized backends like ONNX Runtime and PyTorch.
+La aplicación integra de forma aislada e independiente su propio entorno de inferencia de Python y los algoritmos del proyecto **Ultimate Vocal Remover (UVR)**, ofreciendo a los productores musicales un procesamiento local sin fricciones y libre de dependencias globales ("Dependency Hell").
 
 ---
 
-## 📖 Documentation
+## 🏗️ Arquitectura de Procesamiento / System Architecture
 
-For a comprehensive technical breakdown, architectural ADRs, and operational guides, visit our official **[Wiki](docs/wiki/index.md)**.
+prismSplit divide su flujo de trabajo en dos capas de alta especialización para un rendimiento máximo:
 
-*   **[Technical Architecture](docs/wiki/architecture.md)**
-*   **[Development Guide](docs/wiki/development.md)**
-*   **[Brand & Design](docs/wiki/brand.md)**
-*   **[Agent SOP](docs/AGENT.md)**
+1.  **Orquestación (Rust + Tauri v2):** Controla el ciclo de vida del software, supervisión de procesos paralelos, descargas concurrentes de modelos con barra de progreso precisa, ruteo asíncrono de buffers de audio y chasis del frontend.
+2.  **Motor de Inferencia (Python Runner):** Un subproceso nativo desacoplado que ejecuta las complejas redes de separación utilizando librerías optimizadas de PyTorch y ONNX Runtime. La comunicación se realiza mediante flujos estructurados de JSON de baja latencia sobre `stdio`.
+
+```text
+  [ Vite / React Frontend ] 
+             │
+      ( Tauri IPC Commands )
+             │
+   [ Rust Orchestration Core ]  ◄── (Detección Mutua de prismConsole)
+             │
+   ( Stdio JSON Protocol )
+             │
+  [ Embedded Python Inference ] ──► [ ONNX Runtime / CUDA GPU ]
+```
 
 ---
 
-## 🚀 Getting Started (Development)
+## ⚡ Superpoderes / Key Features
 
-### Prerequisites
-- **Node.js** (v18+)
-- **Rust** (Stable)
-- **Windows 10/11** (Primary target)
+*   🎛️ **Multi-Engine Integrado:** Soporte nativo para modelos **MDX-Net**, **VR Architecture**, **Demucs (v1-v4)** y **Roformer** de espectro completo.
+*   🔄 **Sincronización Automática de Catálogo:** Consulta y descarga modelos con SHA-256 verificado en un clic directamente desde los servidores de UVR.
+*   💾 **Scan Local Zero-Copy:** Detección de modelos preexistentes en tu disco mediante hashes MD5. Los utiliza en su ubicación original sin duplicar datos en el disco.
+*   🔋 **Entorno Python Integrado:** Inicialización e instalación automatizada del motor en el primer arranque ("Prepare Engine") dentro del sandbox del usuario.
+*   🚀 **Aceleración por Hardware:** Soporte completo de GPU para tarjetas NVIDIA (CUDA), AMD/Intel (DirectML) y CPUs optimizadas multi-núcleo.
+*   ⛓️ **Suite Link Integrado:** Detección automática en Rust de su aplicación hermana **prismConsole**, permitiendo un salto rápido o promoviendo el orquestador brutalista IA de agentes de estudio.
 
-### Installation
-1.  **Clone the Repository:**
+---
 
+## 🚀 Instalación y Construcción / Installation & Build
+
+### Requisitos Previos
+*   **Windows 10 / 11** (Sistema de desarrollo principal de Jules)
+*   **Node.js** (v18+)
+*   **Rust** (Stable)
+
+### Pasos
+1.  **Clonar el Repositorio:**
     ```bash
     git clone https://github.com/julesklord/prismsplit.git
     cd prismsplit
     ```
-
-2.  **Install Frontend Dependencies:**
-
+2.  **Instalar Dependencias de UI:**
     ```bash
     npm install
     ```
-
-3.  **Run in Development Mode:**
-
+3.  **Iniciar Entorno en Desarrollo:**
+    Inicia la ventana de Tauri y levanta el compilador asíncrono simultáneamente:
     ```bash
-    npm run tauri dev
+    npm run dev
+    ```
+4.  **Compilar Distribución de Producción:**
+    Compila el instalador independiente optimizado con todos los iconos nativos del chasis:
+    ```bash
+    npm run build
     ```
 
-4.  **First Run Setup:**
-    Upon launching, PrismSplit will guide you through the **"Prepare Engine"** process, which handles the automated unpacking of the Python runtime and dependency installation.
-
 ---
 
-## 🎛️ Usage
+## 🛠️ Estándares Visuales / Design Guidelines
 
-1.  **Initialize:** Run the "Prepare Engine" step from the Setup panel.
-2.  **Import Models:**
-    - Go to **Model Registry**.
-    - Click **Sync with UVR Servers** to see available models.
-    - Or click **Scan Local Directory** to import your existing UVR collection.
-3.  **Extract:**
-    - Drag & Drop your audio file into the **Extraction** tab.
-    - Select your desired Architecture and Compute Profile (GPU/CPU).
-    - Hit **Start Processing** and watch the real-time logs.
+*   **Contraste de Marca:** Mantiene la firma visual oficial de la suite: la palabra `prism` en tipografía Serif Italic analógica (`Playfair Display`) y el nombre del módulo `Split` en sans-serif de precisión (`Outfit`).
+*   **Chapa de Stems:** El visualizador espectral refleja fielmente las ondas divididas en stems con colores HSL personalizados (Cian, Oro y Esmeralda) con resplandor neón sutil sobre un chasis de aluminio anodizado verde oscuro (`#111815` a `#030604`).
+*   **Tornillería Física:** El chasis de la interfaz de usuario en Tauri simula el hardware de montaje clásico con 4 tornillos de acero inoxidable expuestos y etiquetas de calibración grabadas.
 
 ---
-
-## 📜 Credits & License
-
-PrismSplit is licensed under the **MIT License**.
-
-This project would not be possible without the incredible research and model development by the **Ultimate Vocal Remover (UVR)** team. PrismSplit acts as a specialized shell and orchestration layer for the inference logic vendored from the UVR project.
-
-- **UVR Project:** [GitHub Repository](https://github.com/Anjok07/uvr)
-- **Model Repositories:** Provided by [TRvlvr](https://github.com/TRvlvr)
-
----
-
-## 🛠️ Roadmap to Alpha
-- [x] Rust Orchestration Core
-- [x] Full UVR Model Registry Sync
-- [x] Local Directory Scanning (MD5 Identification)
-- [x] Real-time Progress Events
-- [ ] Training Module Bridge
-- [ ] Audio Preview Player
-- [ ] Advanced Ensemble Builder
-
----
+<div align="center">
+  <sub>prismSuite — Diseñado con precisión brutalista analógica y alto rendimiento. REV 2.5</sub>
+</div>

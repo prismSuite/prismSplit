@@ -5,6 +5,29 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+# Safe stdout wrapper to prevent Windows Errno 22 (Invalid Argument) and BrokenPipe errors
+# when the parent Rust process closes its reader pipe end (common after terminal events).
+class SafeStdout:
+    def __init__(self, original_stdout):
+        self.original_stdout = original_stdout
+
+    def write(self, data):
+        try:
+            self.original_stdout.write(data)
+        except (OSError, BrokenPipeError):
+            sys.exit(0)
+
+    def flush(self):
+        try:
+            self.original_stdout.flush()
+        except (OSError, BrokenPipeError):
+            sys.exit(0)
+
+    def __getattr__(self, name):
+        return getattr(self.original_stdout, name)
+
+sys.stdout = SafeStdout(sys.stdout)
+
 # Robustly add the vendored 'uvr' directory (which contains `lib_v5`) to sys.path
 # so imports like `import lib_v5` work both in-source and in bundled installers.
 try:
