@@ -80,13 +80,6 @@ prismSplit uses two specialized layers:
     ```
 
 ---
-
-## Design Guidelines
-
-*   **Typography:** The word `prism` uses Serif Italic (`Playfair Display`), while the module name `Split` uses Sans-Serif (`Outfit`).
-*   **Visualizer:** The spectral visualizer displays stem-specific colors using HSL presets (Cyan, Gold, Emerald) on an anodized aluminum background.
-
----
 <div align="center">
   <sub>prismSuite — Designed for precision and performance.</sub>
 </div>
