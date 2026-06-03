@@ -62,12 +62,70 @@ impl RuntimeManager {
 
             if let Ok(output) = output {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                return stdout
+                let devices: Vec<String> = stdout
                     .lines()
                     .skip(1) // Skip header "Name"
                     .map(|l| l.trim().to_string())
                     .filter(|l| !l.is_empty())
                     .collect();
+                if !devices.is_empty() {
+                    return devices;
+                }
+            }
+        } else if cfg!(target_os = "macos") {
+            let output = Command::new("system_profiler")
+                .arg("SPDisplaysDataType")
+                .output()
+                .await;
+            if let Ok(output) = output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let devices: Vec<String> = stdout
+                    .lines()
+                    .filter(|l| l.contains("Chipset Model:"))
+                    .map(|l| l.replace("Chipset Model:", "").trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                if !devices.is_empty() {
+                    return devices;
+                }
+            }
+        } else if cfg!(target_os = "linux") {
+            let output = Command::new("nvidia-smi")
+                .args(["--query-gpu=name", "--format=csv,noheader"])
+                .output()
+                .await;
+            if let Ok(output) = output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let devices: Vec<String> = stdout
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                if !devices.is_empty() {
+                    return devices;
+                }
+            }
+
+            let output = Command::new("sh")
+                .args(["-c", "lspci | grep -E 'VGA|3D|Display'"])
+                .output()
+                .await;
+            if let Ok(output) = output {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let devices: Vec<String> = stdout
+                    .lines()
+                    .map(|l| {
+                        l.split("controller:")
+                            .last()
+                            .unwrap_or(l)
+                            .trim()
+                            .to_string()
+                    })
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                if !devices.is_empty() {
+                    return devices;
+                }
             }
         }
         vec!["CPU Only".to_string()]

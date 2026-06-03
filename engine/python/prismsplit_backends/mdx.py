@@ -48,7 +48,12 @@ class MdxBackend(BackendBase):
         """
         Separate audio into vocals and instrumental using MDX-Net ONNX model.
         """
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
 
         # Ensure stereo
         if audio.ndim == 1:
@@ -69,7 +74,9 @@ class MdxBackend(BackendBase):
 
         # Load ONNX session
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        if device.type == "cpu":
+        if sys.platform == "darwin":
+            providers = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+        elif device.type == "cpu":
             providers = ["CPUExecutionProvider"]
 
         session = ort.InferenceSession(model_path, providers=providers)

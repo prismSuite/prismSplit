@@ -24,7 +24,12 @@ class DemucsBackend(BackendBase):
         Separate audio using Demucs.
         Returns (vocals, instrumental).
         """
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
         # In UVR context, we might load a specific model path, but standard Demucs
         # often uses name-based fetching. If model_path is a directory or weights file,
         # get_model might need adaptation, but we stick to the plan's specification.
