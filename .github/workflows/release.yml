@@ -1,0 +1,135 @@
+name: Release Builds
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows (EXE & Portable ZIP)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build Release Binary
+        run: cargo build --release
+
+      - name: Prepare Portable Package
+        shell: bash
+        run: |
+          mkdir -p dist/PrismSplit
+          cp target/release/prismsplit.exe dist/PrismSplit/
+          cp -r engine dist/PrismSplit/
+          cp -r uvr dist/PrismSplit/
+          VERSION="${{ github.ref_name }}"
+          if [[ $VERSION != v* ]]; then VERSION="v0.1.0"; fi
+          cd dist
+          tar -a -c -f prismsplit_portable_windows_${VERSION}.zip PrismSplit
+
+      - name: Build Installer (EXE via NSIS)
+        run: npx --yes @cargo-packager/cli --release --formats nsis
+
+      - name: Rename and Stage Artifacts
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [[ $VERSION != v* ]]; then VERSION="v0.1.0"; fi
+          mkdir -p final-artifacts
+          cp dist/prismsplit_portable_windows_${VERSION}.zip final-artifacts/
+          find target/release/packager/nsis/ -name "*.exe" -exec cp {} final-artifacts/prismsplit_installer_windows_${VERSION}.exe \;
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: final-artifacts/
+
+  build-linux:
+    name: Build Linux (DEB & Portable TAR)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libx11-dev libwayland-dev libxkbcommon-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Build Release Binary
+        run: cargo build --release
+
+      - name: Prepare Portable Package
+        run: |
+          mkdir -p dist/PrismSplit
+          cp target/release/prismsplit dist/PrismSplit/
+          cp -r engine dist/PrismSplit/
+          cp -r uvr dist/PrismSplit/
+          VERSION="${{ github.ref_name }}"
+          if [[ $VERSION != v* ]]; then VERSION="v0.1.0"; fi
+          cd dist
+          tar -czf prismsplit_portable_linux_${VERSION}.tar.gz PrismSplit
+
+      - name: Build Debian Package (DEB)
+        run: npx --yes @cargo-packager/cli --release --formats deb
+
+      - name: Rename and Stage Artifacts
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [[ $VERSION != v* ]]; then VERSION="v0.1.0"; fi
+          mkdir -p final-artifacts
+          cp dist/prismsplit_portable_linux_${VERSION}.tar.gz final-artifacts/
+          find target/release/packager/deb/ -name "*.deb" -exec cp {} final-artifacts/prismsplit_installer_linux_${VERSION}.deb \;
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-builds
+          path: final-artifacts/
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-builds
+          path: release-artifacts
+
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-builds
+          path: release-artifacts
+
+      - name: Generate Release File List
+        run: ls -R release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*.zip
+            release-artifacts/*.tar.gz
+            release-artifacts/*.exe
+            release-artifacts/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

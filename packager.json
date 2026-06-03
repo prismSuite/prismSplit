@@ -1,0 +1,18 @@
+{
+  "productName": "PrismSplit",
+  "identifier": "com.prismsplit.app",
+  "version": "0.1.0",
+  "category": "AudioVideo",
+  "authors": [
+    "PrismSplit"
+  ],
+  "description": "Industrial-grade Karaoke Audio Separation tool.",
+  "homepage": "https://github.com/julesklord/prismSplit",
+  "icons": [
+    "assets/icons/icon.png"
+  ],
+  "resources": [
+    "engine",
+    "uvr"
+  ]
+}
