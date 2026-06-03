@@ -351,7 +351,9 @@ impl RuntimeManager {
         };
 
         let source_uvr_dir = if source_engine_dir == self.paths.resource_dir {
-            self.paths.resource_dir.join("uvr")
+            self.paths.resource_dir.parent()
+                .map(|p| p.join("uvr"))
+                .unwrap_or_else(|| self.paths.resource_dir.join("uvr"))
         } else {
             self.paths.workspace_uvr_dir()
         };

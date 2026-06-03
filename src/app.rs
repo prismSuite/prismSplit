@@ -430,7 +430,7 @@ impl PrismSplitApp {
                                 self.runtime.spawn(async move {
                                     let _ = tx.send(AppMsg::Log("PREVIEW: Analyzing spectral data...".into()));
                                     let mut stems = Vec::new();
-                                    if let Ok(peaks) = crate::preview::analyze_wav_peaks(&vocals_path, 180) {
+                                    if let Ok(peaks) = crate::preview::analyze_audio_peaks(&vocals_path, 180) {
                                         stems.push(crate::preview::StemPreview {
                                             id: "vocals".into(),
                                             name: "VOCALS (Voz)".into(),
@@ -439,7 +439,7 @@ impl PrismSplitApp {
                                             is_playing: false,
                                         });
                                     }
-                                    if let Ok(peaks) = crate::preview::analyze_wav_peaks(&instrumental_path, 180) {
+                                    if let Ok(peaks) = crate::preview::analyze_audio_peaks(&instrumental_path, 180) {
                                         stems.push(crate::preview::StemPreview {
                                             id: "instrumental".into(),
                                             name: "INSTRUMENTAL (Música)".into(),

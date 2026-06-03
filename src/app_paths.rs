@@ -85,10 +85,18 @@ impl AppPaths {
     }
 
     pub fn venv_python_executable(&self) -> PathBuf {
-        self.venv_dir.join("Scripts").join("python.exe")
+        if cfg!(target_os = "windows") {
+            self.venv_dir.join("Scripts").join("python.exe")
+        } else {
+            self.venv_dir.join("bin").join("python")
+        }
     }
 
     pub fn runtime_bootstrap_python(&self) -> PathBuf {
-        self.python_dir.join("python.exe")
+        if cfg!(target_os = "windows") {
+            self.python_dir.join("python.exe")
+        } else {
+            self.python_dir.join("python")
+        }
     }
 }

@@ -58,11 +58,28 @@ fn app_config_root() -> PathBuf {
 }
 
 fn resource_engine_dir() -> PathBuf {
+    // 1. Try local workspace (for development/cargo run)
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_engine = manifest_dir.join("engine");
     if workspace_engine.is_dir() {
-        workspace_engine
-    } else {
-        manifest_dir.join("engine")
+        return workspace_engine;
     }
+
+    // 2. Try current executable's sibling (for portable/zip/nsis release installs)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let engine_dir = exe_dir.join("engine");
+            if engine_dir.is_dir() {
+                return engine_dir;
+            }
+            // 3. Try under 'resources' subdirectory (for cargo-packager / bundle standard)
+            let resources_engine = exe_dir.join("resources").join("engine");
+            if resources_engine.is_dir() {
+                return resources_engine;
+            }
+        }
+    }
+
+    // Fallback guess
+    manifest_dir.join("engine")
 }

@@ -13,7 +13,7 @@ pub struct StemPreview {
     pub is_playing: bool,
 }
 
-pub fn analyze_wav_peaks<P: AsRef<Path>>(path: P, num_points: usize) -> Result<Vec<f32>, anyhow::Error> {
+pub fn analyze_audio_peaks<P: AsRef<Path>>(path: P, num_points: usize) -> Result<Vec<f32>, anyhow::Error> {
     let file = File::open(path)?;
     let decoder = rodio::Decoder::new(BufReader::new(file))?;
     
