@@ -52,7 +52,30 @@ pub fn show(app: &mut PrismSplitApp, ui: &mut Ui) {
             app.state.config.cpu_threads = Some(threads);
         });
 
-        fieldset(&mut columns[1], "ENGINE_MAINTENANCE", |ui| {
+        let col_1 = &mut columns[1];
+        fieldset(col_1, "UI_APPEARANCE", |ui| {
+            ui.label("SELECT USER INTERFACE THEME");
+            let mut dark_mode = app.state.config.theme_dark.unwrap_or(true);
+            let mut changed = false;
+            
+            ui.horizontal(|ui| {
+                if ui.radio_value(&mut dark_mode, true, "DARK MODE (MONOLITH)").changed() {
+                    changed = true;
+                }
+                if ui.radio_value(&mut dark_mode, false, "LIGHT MODE (BRUTALIST)").changed() {
+                    changed = true;
+                }
+            });
+            
+            if changed {
+                app.state.config.theme_dark = Some(dark_mode);
+                crate::theme::apply_prismsplit_theme(ui.ctx(), dark_mode);
+            }
+        });
+
+        col_1.add_space(8.0);
+
+        fieldset(col_1, "ENGINE_MAINTENANCE", |ui| {
             ui.label("HARDWARE ACCELERATION");
             if let Some(health) = &app.state.health {
                 if health.gpu_devices.is_empty() {

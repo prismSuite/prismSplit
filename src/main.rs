@@ -33,7 +33,9 @@ fn main() -> eframe::Result<()> {
         "PrismSplit",
         native_options,
         Box::new(move |cc| {
-            apply_prismsplit_theme(&cc.egui_ctx);
+            let config = backend.load_config();
+            let theme_dark = config.theme_dark.unwrap_or(true);
+            apply_prismsplit_theme(&cc.egui_ctx, theme_dark);
             Ok(Box::new(PrismSplitApp::new(
                 Arc::clone(&backend),
                 Arc::clone(&runtime),

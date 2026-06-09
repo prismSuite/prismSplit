@@ -317,11 +317,13 @@ impl PrismSplitApp {
         }
     }
 
-    fn drain_messages(&mut self) {
+    fn drain_messages(&mut self, ctx: &egui::Context) {
         while let Ok(message) = self.state.rx.try_recv() {
             match message {
                 AppMsg::ConfigLoaded(config) => {
                     self.state.config = config.clone();
+                    let theme_dark = config.theme_dark.unwrap_or(true);
+                    crate::theme::apply_prismsplit_theme(ctx, theme_dark);
                     if let Some(val) = config.last_input_file {
                         self.state.input_file = val;
                     }
@@ -549,7 +551,7 @@ impl eframe::App for PrismSplitApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.drain_messages();
+        self.drain_messages(ctx);
         self.handle_dropped_files(ctx);
 
         egui::TopBottomPanel::top("top_bar")

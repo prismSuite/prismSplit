@@ -82,6 +82,8 @@ pub struct AppConfig {
     pub mdx_overlap: Option<f32>,
     #[serde(default)]
     pub cpu_threads: Option<u32>,
+    #[serde(default)]
+    pub theme_dark: Option<bool>,
 }
 
 impl Default for AppConfig {
@@ -98,6 +100,7 @@ impl Default for AppConfig {
             inference_device: Some("Auto".to_string()),
             mdx_overlap: Some(0.25),
             cpu_threads: Some(0),
+            theme_dark: Some(true),
         }
     }
 }

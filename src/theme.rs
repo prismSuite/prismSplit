@@ -1,49 +1,139 @@
 use egui::{vec2, Color32, Stroke, Rounding, epaint::Shadow, Margin};
+use std::path::PathBuf;
 
-pub fn apply_prismsplit_theme(ctx: &egui::Context) {
+fn get_system_font_data() -> Option<Vec<u8>> {
+    let paths = if cfg!(target_os = "windows") {
+        vec![
+            PathBuf::from("C:\\Windows\\Fonts\\tahoma.ttf"),
+            PathBuf::from("C:\\Windows\\Fonts\\segoeui.ttf"),
+            PathBuf::from("C:\\Windows\\Fonts\\arial.ttf"),
+        ]
+    } else if cfg!(target_os = "macos") {
+        vec![
+            PathBuf::from("/System/Library/Fonts/LucidaGrande.ttc"),
+            PathBuf::from("/System/Library/Fonts/Helvetica.ttc"),
+            PathBuf::from("/Library/Fonts/Arial.ttf"),
+        ]
+    } else {
+        // Linux
+        vec![
+            PathBuf::from("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            PathBuf::from("/usr/share/fonts/TTF/DejaVuSans.ttf"),
+            PathBuf::from("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+        ]
+    };
+
+    for path in paths {
+        if path.is_file() {
+            if let Ok(data) = std::fs::read(path) {
+                return Some(data);
+            }
+        }
+    }
+    None
+}
+
+pub fn apply_prismsplit_theme(ctx: &egui::Context, dark_mode: bool) {
+    // 1. Setup system fonts
+    if let Some(font_data) = get_system_font_data() {
+        let mut fonts = egui::FontDefinitions::default();
+        
+        fonts.font_data.insert(
+            "system_font".to_owned(),
+            egui::FontData::from_owned(font_data),
+        );
+        
+        fonts.families.get_mut(&egui::FontFamily::Proportional)
+            .unwrap()
+            .insert(0, "system_font".to_owned());
+            
+        fonts.families.get_mut(&egui::FontFamily::Monospace)
+            .unwrap()
+            .insert(0, "system_font".to_owned());
+            
+        ctx.set_fonts(fonts);
+    }
+
     let mut style = (*ctx.style()).clone();
-    let mut visuals = egui::Visuals::dark();
+    
+    // Set Tahoma-like sizes
+    style.text_styles.insert(egui::TextStyle::Body, egui::FontId::new(12.0, egui::FontFamily::Proportional));
+    style.text_styles.insert(egui::TextStyle::Button, egui::FontId::new(12.0, egui::FontFamily::Proportional));
+    style.text_styles.insert(egui::TextStyle::Small, egui::FontId::new(11.0, egui::FontFamily::Proportional));
+    style.text_styles.insert(egui::TextStyle::Heading, egui::FontId::new(16.0, egui::FontFamily::Proportional));
 
-    // MonolithUI v1.0 Tokens
-    // --ui-surface-0 (Pure Deep): #050505
-    // --ui-surface-1 (Panel): #0a0a0a
-    // --ui-surface-2 (Wells/Inputs): #111111
-    // --ui-surface-3 (Faint BG): #181818
-    // --ui-surface-4 (Widgets Inactive): #202020
-    // --ui-surface-5 (Widgets Hovered): #282828
-    // --ui-surface-6 (Highlight Borders): #323232
-    // brand-plasma-core primary (Electric Cyan): #22d3ee
-
-    // Backgrounds & Surfaces
-    visuals.panel_fill = Color32::from_rgb(10, 10, 10); // surface-1 (panels, nav)
-    visuals.window_fill = Color32::from_rgb(5, 5, 5); // surface-0 (deepest)
-    visuals.extreme_bg_color = Color32::from_rgb(17, 17, 17); // surface-2 (inputs)
-    visuals.faint_bg_color = Color32::from_rgb(24, 24, 24); // surface-3 
-
-    // Text
-    visuals.override_text_color = Some(Color32::from_rgb(235, 235, 240));
-
-    // Selection / Brand
-    visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(34, 211, 238, 30);
-    visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(34, 211, 238));
-
-    // Widgets inactive (Surface 4)
-    visuals.widgets.inactive.bg_fill = Color32::from_rgb(32, 32, 32); // surface-4
-    visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(24, 24, 24); // surface-3
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 12)); // subtle top lit edge
-    visuals.widgets.inactive.rounding = Rounding::ZERO; // retro Win32 90 deg corners
-
-    // Widgets hovered (Surface 5)
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(40, 40, 40); // surface-5
-    visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(32, 32, 32); // surface-4
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 22));
-    visuals.widgets.hovered.rounding = Rounding::ZERO;
-
-    // Widgets active (Sunken)
-    visuals.widgets.active.bg_fill = Color32::from_rgb(17, 17, 17); // surface-2
-    visuals.widgets.active.weak_bg_fill = Color32::from_rgb(17, 17, 17); 
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(34, 211, 238, 255)); // brand glow
-    visuals.widgets.active.rounding = Rounding::ZERO;
+    // 2. Setup Visuals
+    let mut visuals = if dark_mode {
+        let mut vis = egui::Visuals::dark();
+        
+        // Backgrounds & Surfaces (Dark Monolith)
+        vis.panel_fill = Color32::from_rgb(10, 10, 10);
+        vis.window_fill = Color32::from_rgb(5, 5, 5);
+        vis.extreme_bg_color = Color32::from_rgb(17, 17, 17);
+        vis.faint_bg_color = Color32::from_rgb(24, 24, 24);
+        
+        // Text
+        vis.override_text_color = Some(Color32::from_rgb(235, 235, 240));
+        
+        // Selection / Brand
+        vis.selection.bg_fill = Color32::from_rgba_unmultiplied(34, 211, 238, 30);
+        vis.selection.stroke = Stroke::new(1.0, Color32::from_rgb(34, 211, 238));
+        
+        // Widgets inactive
+        vis.widgets.inactive.bg_fill = Color32::from_rgb(32, 32, 32);
+        vis.widgets.inactive.weak_bg_fill = Color32::from_rgb(24, 24, 24);
+        vis.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 12));
+        vis.widgets.inactive.rounding = Rounding::ZERO;
+        
+        // Widgets hovered
+        vis.widgets.hovered.bg_fill = Color32::from_rgb(40, 40, 40);
+        vis.widgets.hovered.weak_bg_fill = Color32::from_rgb(32, 32, 32);
+        vis.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 22));
+        vis.widgets.hovered.rounding = Rounding::ZERO;
+        
+        // Widgets active
+        vis.widgets.active.bg_fill = Color32::from_rgb(17, 17, 17);
+        vis.widgets.active.weak_bg_fill = Color32::from_rgb(17, 17, 17);
+        vis.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(34, 211, 238, 255));
+        vis.widgets.active.rounding = Rounding::ZERO;
+        
+        vis
+    } else {
+        let mut vis = egui::Visuals::light();
+        
+        // Backgrounds & Surfaces (Light Monolith / Industrial Brutalism)
+        vis.panel_fill = Color32::from_rgb(240, 240, 240);
+        vis.window_fill = Color32::from_rgb(250, 250, 250);
+        vis.extreme_bg_color = Color32::from_rgb(255, 255, 255);
+        vis.faint_bg_color = Color32::from_rgb(225, 225, 225);
+        
+        // Text (Dark contrast)
+        vis.override_text_color = Some(Color32::from_rgb(15, 15, 20));
+        
+        // Selection / Brand
+        vis.selection.bg_fill = Color32::from_rgba_unmultiplied(34, 211, 238, 50);
+        vis.selection.stroke = Stroke::new(1.0, Color32::from_rgb(8, 145, 178));
+        
+        // Widgets inactive
+        vis.widgets.inactive.bg_fill = Color32::from_rgb(220, 220, 220);
+        vis.widgets.inactive.weak_bg_fill = Color32::from_rgb(230, 230, 230);
+        vis.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 0, 0, 30));
+        vis.widgets.inactive.rounding = Rounding::ZERO;
+        
+        // Widgets hovered
+        vis.widgets.hovered.bg_fill = Color32::from_rgb(205, 205, 205);
+        vis.widgets.hovered.weak_bg_fill = Color32::from_rgb(215, 215, 215);
+        vis.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(0, 0, 0, 50));
+        vis.widgets.hovered.rounding = Rounding::ZERO;
+        
+        // Widgets active
+        vis.widgets.active.bg_fill = Color32::from_rgb(245, 245, 245);
+        vis.widgets.active.weak_bg_fill = Color32::from_rgb(245, 245, 245);
+        vis.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(8, 145, 178, 255));
+        vis.widgets.active.rounding = Rounding::ZERO;
+        
+        vis
+    };
 
     // Shadows (Disabled for flat retro-brutalist DAW skeuomorphism)
     visuals.window_shadow = Shadow {
@@ -66,8 +156,8 @@ pub fn apply_prismsplit_theme(ctx: &egui::Context) {
     style.spacing.button_padding = vec2(16.0, 8.0);
     style.spacing.window_margin = Margin::same(16.0);
     
-    // Animation/Motion - Try to make it feel slightly more responsive
-    style.animation_time = 0.16; // 160ms for fast UI feedback
+    // Animation/Motion
+    style.animation_time = 0.16;
 
     ctx.set_style(style);
 }
