@@ -76,6 +76,12 @@ pub struct AppConfig {
     pub last_selected_model: Option<String>,
     pub last_quality: Option<String>,
     pub last_export_format: Option<String>,
+    #[serde(default)]
+    pub inference_device: Option<String>,
+    #[serde(default)]
+    pub mdx_overlap: Option<f32>,
+    #[serde(default)]
+    pub cpu_threads: Option<u32>,
 }
 
 impl Default for AppConfig {
@@ -89,6 +95,9 @@ impl Default for AppConfig {
             last_selected_model: None,
             last_quality: None,
             last_export_format: None,
+            inference_device: Some("Auto".to_string()),
+            mdx_overlap: Some(0.25),
+            cpu_threads: Some(0),
         }
     }
 }

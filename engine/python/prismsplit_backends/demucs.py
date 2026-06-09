@@ -18,21 +18,27 @@ class DemucsBackend(BackendBase):
     name = "demucs"
 
     def run_inference(
-        self, audio: np.ndarray, model_name: str
+        self, audio: np.ndarray, model_name: str, request: dict
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Separate audio using Demucs.
         Returns (vocals, instrumental).
         """
-        if torch.cuda.is_available():
+        device_name = request.get("device", "auto").lower()
+        if device_name == "cuda" and torch.cuda.is_available():
             device = "cuda"
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        elif device_name == "mps" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             device = "mps"
-        else:
+        elif device_name == "cpu":
             device = "cpu"
-        # In UVR context, we might load a specific model path, but standard Demucs
-        # often uses name-based fetching. If model_path is a directory or weights file,
-        # get_model might need adaptation, but we stick to the plan's specification.
+        else:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+        
         model = get_model(model_name).to(device)
         model.eval()
 
@@ -72,7 +78,7 @@ class DemucsBackend(BackendBase):
 
         # 2. Process
         print(json.dumps(progress_event(job_id, "Running Demucs inference", 50.0)))
-        vocals, instrumental = self.run_inference(audio, model_name)
+        vocals, instrumental = self.run_inference(audio, model_name, request)
 
         # 3. Save Outputs
         print(json.dumps(progress_event(job_id, "Saving stems", 80.0)))

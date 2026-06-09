@@ -4,7 +4,8 @@ use crate::widgets::fieldset;
 
 pub fn show(app: &mut PrismSplitApp, ui: &mut Ui) {
     ui.columns(2, |columns| {
-        fieldset(&mut columns[0], "SYSTEM_PATHS", |ui| {
+        let col_0 = &mut columns[0];
+        fieldset(col_0, "SYSTEM_PATHS", |ui| {
             ui.label("MODELS DIRECTORY");
             ui.horizontal(|ui| {
                 let value = app.state.config.models_dir.get_or_insert_with(String::new);
@@ -22,6 +23,33 @@ pub fn show(app: &mut PrismSplitApp, ui: &mut Ui) {
                     app.browse_cache_dir();
                 }
             });
+        });
+
+        col_0.add_space(8.0);
+
+        fieldset(col_0, "INFERENCE_CONFIGURATION", |ui| {
+            ui.label("INFERENCE DEVICE");
+            let mut device = app.state.config.inference_device.clone().unwrap_or_else(|| "Auto".to_string());
+            egui::ComboBox::from_id_source("inference_device_selector")
+                .selected_text(&device)
+                .show_ui(ui, |ui| {
+                    for option in &["Auto", "CPU", "CUDA", "MPS"] {
+                        ui.selectable_value(&mut device, option.to_string(), *option);
+                    }
+                });
+            app.state.config.inference_device = Some(device);
+
+            ui.add_space(6.0);
+            ui.label("MDX OVERLAP (Voz/Música)");
+            let mut overlap = app.state.config.mdx_overlap.unwrap_or(0.25);
+            ui.add(egui::Slider::new(&mut overlap, 0.0..=0.95).text("Overlap"));
+            app.state.config.mdx_overlap = Some(overlap);
+
+            ui.add_space(6.0);
+            ui.label("CPU THREADS");
+            let mut threads = app.state.config.cpu_threads.unwrap_or(0);
+            ui.add(egui::Slider::new(&mut threads, 0..=16).text("Threads (0 = Auto)"));
+            app.state.config.cpu_threads = Some(threads);
         });
 
         fieldset(&mut columns[1], "ENGINE_MAINTENANCE", |ui| {

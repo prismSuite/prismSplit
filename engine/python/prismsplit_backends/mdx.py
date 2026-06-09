@@ -43,17 +43,25 @@ class MdxBackend(BackendBase):
     name = "mdx"
 
     def run_inference(
-        self, audio: np.ndarray, model_path: str, job_id: str
+        self, audio: np.ndarray, model_path: str, job_id: str, request: dict
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Separate audio into vocals and instrumental using MDX-Net ONNX model.
         """
-        if torch.cuda.is_available():
+        device_name = request.get("device", "auto").lower()
+        if device_name == "cuda" and torch.cuda.is_available():
             device = torch.device("cuda")
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        elif device_name == "mps" and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             device = torch.device("mps")
-        else:
+        elif device_name == "cpu":
             device = torch.device("cpu")
+        else:
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = torch.device("mps")
+            else:
+                device = torch.device("cpu")
 
         # Ensure stereo
         if audio.ndim == 1:
@@ -67,7 +75,7 @@ class MdxBackend(BackendBase):
         hop_length = 1024
         dim_f = 2048
         dim_t = 256
-        overlap = 0.25
+        overlap = float(request.get("overlap", 0.25))
 
         # Initialize STFT
         stft = STFT(n_fft, hop_length, dim_f, device)
@@ -79,7 +87,12 @@ class MdxBackend(BackendBase):
         elif device.type == "cpu":
             providers = ["CPUExecutionProvider"]
 
-        session = ort.InferenceSession(model_path, providers=providers)
+        sess_options = ort.SessionOptions()
+        intra_op = request.get("intra_op_num_threads")
+        if intra_op is not None:
+            sess_options.intra_op_num_threads = int(intra_op)
+
+        session = ort.InferenceSession(model_path, sess_options=sess_options, providers=providers)
         input_name = session.get_inputs()[0].name
 
         # Audio processing
@@ -160,7 +173,7 @@ class MdxBackend(BackendBase):
 
         # 2. Process
         print(json.dumps(progress_event(job_id, "Running MDX-Net inference", 30.0)))
-        vocals, instrumental = self.run_inference(audio, model_path, job_id)
+        vocals, instrumental = self.run_inference(audio, model_path, job_id, request)
 
         # 3. Save Outputs
         print(json.dumps(progress_event(job_id, "Saving stems", 90.0)))

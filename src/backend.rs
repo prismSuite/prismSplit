@@ -237,8 +237,12 @@ impl Backend {
 
         std::fs::create_dir_all(&output_dir)?;
 
-        let bridge = EngineBridge::new(python_exe, engine_script);
-        let payload = serde_json::json!({
+        let config = self.load_config();
+        let device = config.inference_device.unwrap_or_else(|| "Auto".to_string()).to_lowercase();
+        let overlap = config.mdx_overlap.unwrap_or(0.25);
+        let cpu_threads = config.cpu_threads.unwrap_or(0);
+
+        let mut payload = serde_json::json!({
             "job_id": "job-local",
             "backend": entry.backend,
             "model_name": std::path::Path::new(&entry.filename)
@@ -248,8 +252,17 @@ impl Backend {
             "input_path": file_path,
             "model_path": model_path,
             "output_dir": output_dir,
+            "device": device,
+            "overlap": overlap,
         });
 
+        if cpu_threads > 0 {
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("intra_op_num_threads".to_string(), serde_json::json!(cpu_threads));
+            }
+        }
+
+        let bridge = EngineBridge::new(python_exe, engine_script);
         let job_id = "job-local".to_string();
         let mut child = bridge.spawn_command("separate", payload).await?;
         let stdout = child
