@@ -8,7 +8,7 @@ use crate::models::{
     SetupStatus,
 };
 use crate::runtime_manager::RuntimeManager;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use futures_util::stream::{self, StreamExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -133,22 +133,30 @@ impl Backend {
         let entry = self.model_registry.get_entry(&model_id)?;
         self.model_registry.validate_downloadable(&entry)?;
 
-        {
+        let destination = {
             let dir = self
                 .model_registry
                 .models_dir
                 .lock()
                 .map_err(|_| anyhow!("Failed to lock models_dir"))?;
             std::fs::create_dir_all(&*dir)?;
-        }
-
-        let destination = self.model_registry.installed_model_path(&entry)?;
+            dir.join(&entry.filename)
+        };
         let temp_destination = destination.with_extension("download");
+
+        let mut last_percent = -1.0_f32;
+        let mut last_emit = std::time::Instant::now() - std::time::Duration::from_secs(1);
 
         if let Err(error) =
             download_file_with_progress(&entry.url, &temp_destination, move |downloaded, total| {
                 if total > 0 {
-                    on_progress((downloaded as f32 / total as f32) * 100.0);
+                    let percent = (downloaded as f32 / total as f32) * 100.0;
+                    let now = std::time::Instant::now();
+                    if percent - last_percent >= 1.0 || now.duration_since(last_emit).as_millis() >= 500 {
+                        on_progress(percent);
+                        last_percent = percent;
+                        last_emit = now;
+                    }
                 }
             })
             .await
@@ -157,9 +165,24 @@ impl Backend {
             return Err(error);
         }
 
-        verify_sha256(&temp_destination, &entry.sha256)?;
-        std::fs::copy(&temp_destination, &destination)?;
-        let _ = std::fs::remove_file(&temp_destination);
+        match verify_sha256(&temp_destination, &entry.sha256)? {
+            crate::download_manager::VerificationResult::Verified |
+            crate::download_manager::VerificationResult::SkippedPlaceholder => {
+                if let Err(e) = std::fs::rename(&temp_destination, &destination) {
+                    let _ = std::fs::remove_file(&temp_destination);
+                    return Err(e.into());
+                }
+            }
+            crate::download_manager::VerificationResult::Failed { expected, actual } => {
+                let _ = std::fs::remove_file(&temp_destination);
+                bail!(
+                    "Checksum mismatch for {}. expected {}, got {}",
+                    entry.filename,
+                    expected,
+                    actual
+                );
+            }
+        }
 
         Ok(entry)
     }
@@ -549,6 +572,28 @@ impl Backend {
         Ok(added_count)
     }
 
+    pub async fn kill_process(&self, job_id: &str) {
+        let mut procs = self.active_processes.lock().await;
+        if let Some(mut child) = procs.remove(job_id) {
+            if let Some(pid) = child.id() {
+                println!("KILLING child process [{}] with PID {}", job_id, pid);
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/PID", &pid.to_string(), "/F", "/T"])
+                        .output();
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(pid.to_string())
+                        .output();
+                }
+            }
+        }
+    }
+
     pub fn list_active_processes(&self) -> Vec<(String, Option<u32>)> {
         if let Ok(procs) = self.active_processes.try_lock() {
             procs.iter().map(|(id, child)| (id.clone(), child.id())).collect()
@@ -622,11 +667,47 @@ impl Backend {
     }
 }
 
+fn migrate_config(mut config: AppConfig) -> AppConfig {
+    if config.version < 1 {
+        config.version = 1;
+        // future migrations can go here
+    }
+    config
+}
+
 fn load_config(path: &Path) -> AppConfig {
-    if let Ok(content) = std::fs::read_to_string(path) {
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        AppConfig::default()
+    if !path.exists() {
+        return AppConfig::default();
+    }
+    
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            match serde_json::from_str::<AppConfig>(&content) {
+                Ok(mut config) => {
+                    if config.version < 1 {
+                        config = migrate_config(config);
+                        let _ = save_config(path, &config);
+                    }
+                    config
+                }
+                Err(err) => {
+                    eprintln!("WARNING: Failed to parse config file: {}. Backing up.", err);
+                    let backup_path = path.with_extension(format!(
+                        "corrupt.{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs()
+                    ));
+                    let _ = std::fs::rename(path, backup_path);
+                    AppConfig::default()
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("WARNING: Failed to read config file: {}.", err);
+            AppConfig::default()
+        }
     }
 }
 
@@ -635,6 +716,11 @@ fn save_config(path: &Path, config: &AppConfig) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let content = serde_json::to_string_pretty(config)?;
-    std::fs::write(path, content)?;
+    let temp_path = path.with_extension("json.tmp");
+    std::fs::write(&temp_path, content)?;
+    if let Err(err) = std::fs::rename(&temp_path, path) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(err.into());
+    }
     Ok(())
 }

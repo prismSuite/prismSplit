@@ -37,6 +37,7 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(PrismSplitApp::new(
                 Arc::clone(&backend),
                 Arc::clone(&runtime),
+                cc.storage,
             )))
         }),
     )

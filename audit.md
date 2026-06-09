@@ -1,385 +1,333 @@
-# PrismSplit — Auditoría General del Proyecto
-
-> **Repositorio:** `prismSplit`  
-> **Tipo:** Aplicación nativa de separación de audio (stems)  
-> **Stack:** Rust (egui/eframe) + Python (UVR/ONNX/PyTorch)  
-> **Hash actual:** `33e04a6`  
-> **Fecha de auditoría:** 2026-06-09
 
----
+ # PrismSplit Code Audit
 
-## 1. Descripción General
+ > **Date:** 2026-06-09
+ > **Scope:** `download_manager.rs`, `backend.rs`, `app.rs`, `app_paths.rs`, `preview.rs`, `state.rs`, `model_registry.rs`, `theme.rs`, `widgets.rs`
+ > **Status:** Open — awaiting implementation
 
-**PrismSplit** es una aplicación de escritorio nativa para la separación de audio en stems (voz + instrumental), parte del ecosistema **prismSuite**. La aplicación sigue un patrón de arquitectura híbrida:
+ ---
 
-- **Frontend / Orquestación:** Rust con egui/eframe (UI nativa GPU-acelerada)
-- **Engine de inferencia:** Python embebido con modelos UVR (Ultimate Vocal Remover)
-- **Comunicación:** Protocolo JSON línea a línea sobre stdin/stdout
+ ## 1. Download & Model Management (`src/download_manager.rs`)
 
-### Arquitectura de alto nivel
+ ### 1.1 Inconsistent Hashing APIs
+ **Severity:** Medium
+ **File:** `src/download_manager.rs`
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    PrismSplit App (Rust)                    │
-│  ┌─────────────┐  ┌─────────────┐  ┌───────────────────────┐ │
-│  │  egui UI   │  │   Backend   │  │   RuntimeManager      │ │
-│  │  (app.rs)  │  │ (backend.rs)│  │ (runtime_manager.rs) │ │
-│  └─────┬──────┘  └──────┬──────┘  └───────────┬───────────┘ │
-│        │                │                      │             │
-│        └────────────────┼──────────────────────┘             │
-│                         │                                     │
-│  ┌──────────────────────┴───────────────────────┐            │
-│  │        EngineBridge (JSON/stdio)             │            │
-│  └──────────────────────┬───────────────────────┘            │
-└─────────────────────────┼─────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│          Python Inference Engine (engine/python)             │
-│  ┌─────────────┐  ┌─────────────┐  ┌───────────────────────┐ │
-│  │  MDX-Net   │  │   Demucs    │  │   UVR Vendored        │ │
-│  │  (ONNX)    │  │  (PyTorch)  │  │   (lib_v5, demucs)   │ │
-│  └─────────────┘  └─────────────┘  └───────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
+ `md5_file` and `sha256_file` use different update styles (`hasher.update()` vs `sha2::Digest::update()`). This is inconsistent and error-prone for
+ future maintainers.
 
----
+ **Fix:** Extract a generic `hash_file` helper that accepts any `Digest` implementation, or at least unify the calling style.
 
-## 2. Estructura del Proyecto
+ ```rust
+ fn hash_file<D: Digest>(path: &Path) -> Result<String>
+ ```
 
-### 2.1. Directorios principales
+ ### 1.2 Missing Atomic Temp File Handling
+ **Severity:** Critical
+ **File:** `src/download_manager.rs`
 
-| Directorio | Contenido | Lenguaje |
-|------------|-----------|----------|
-| `src/` | Código fuente Rust (UI, backend, orquestación) | Rust |
-| `src/panels/` | Submódulos de UI (log console) | Rust |
-| `engine/` | Engine Python de inferencia + catálogo de modelos | Python |
-| `engine/python/` | Scripts Python (engine, backends, protocolo) | Python |
-| `uvr/` | Librerías UVR vendored (lib_v5, demucs, modelos) | Python |
-| `tests/` | Tests de integración Rust | Rust |
-| `docs/` | Documentación del proyecto (Gemini, Agent, etc.) | Markdown |
-| `assets/` | Recursos gráficos (logo SVG) | SVG/PNG |
+ `download_file_with_progress` writes directly to `destination`. If the process is interrupted mid-download, a partial/corrupt file remains. The
+ backend (`backend.rs`) does create a `.download` temp file, but then does `std::fs::copy` + `remove_file` instead of an atomic `rename`.
 
-### 2.2. Conteo de archivos por categoría
+ **Fix:** Download to a unique temp file (e.g., `destination.incomplete.<random>`) and `std::fs::rename()` on success. Remove temp file on failure.
 
-- **Rust source:** 18 archivos (`src/` + `tests/`)
-- **Python source:** ~15 archivos (`engine/python/`, backends)
-- **UVR vendored:** ~40+ archivos Python (lib_v5, demucs, modelos)
-- **Config/Data:** `Cargo.toml`, `engine/pyproject.toml`, `engine/models/catalog.json`
-- **Docs:** 4 archivos Markdown
+ ### 1.3 Hardcoded User-Agent
+ **Severity:** Low
+ **File:** `src/download_manager.rs`
 
----
+ The `User-Agent` header is hardcoded to `"PrismSplit/0.1.0"`. Should be defined at a single source of truth (e.g., a crate-level constant or pulled
+ from `Cargo.toml` at compile time via `env!("CARGO_PKG_VERSION")`).
 
-## 3. Análisis de Calidad de Código (Rust)
+ ### 1.4 Silent Checksum Skip is Dangerous
+ **Severity:** Medium
+ **File:** `src/download_manager.rs`
 
-### 3.1. Compilación
+ `verify_sha256` silently accepts `"replace-with-real-sha256"` as a valid skip signal. A user downloading from a synced UVR catalog will never know
+ their model was not integrity-verified.
 
-✅ **El proyecto compila correctamente**
+ **Fix:** Return a typed result:
+ ```rust
+ pub_inside enum VerificationResult {
+     Verified,
+     SkippedPlaceholder,
+     Failed { expected: String, actual: String },
+ }
+ ```
+ The UI should display a warning (orange chip) when a model has no trusted hash.
 
-```bash
-$ cargo check
-    Finished `dev` profile [unoptimized + debuginfo] in 0.37s
-```
+ ### 1.5 No Retry / Resumable Download
+ **Severity:** High
+ **File:** `src/download_manager.rs`
 
-Sin errores de compilación.
+ Network failures are terminal. There is no retry logic, no exponential backoff, and no resumable download via HTTP `Range` headers.
 
-### 3.2. Análisis con Clippy
+ **Fix:** Wrap the HTTP download in a retry loop (3 attempts, exponential backoff). For large model files (>50MB), support `Range` requests to resume
+ interrupted downloads.
 
-⚠️ **3 warnings en librería, 3 en tests** (no críticos):
+ ---
 
-```
-warning: the borrowed expression implements the required traits
-  --> src/app.rs:893 (needless_borrows_for_generic_args)
+ ## 2. Backend `download_model` (`src/backend.rs`)
 
-warning: this creates an owned instance just for comparison
-  --> src/runtime_manager.rs:371 (cmp_owned)
+ ### 2.1 Race Condition on `models_dir` Mutex
+ **Severity:** High
+ **File:** `src/backend.rs` → `download_model()`
 
-warning: you should consider adding a `Default` implementation for `PlaybackController`
-  --> src/preview.rs:59 (new_without_default)
-```
+ The `models_dir` mutex is locked twice in sequence:
+ ```rust
+ let dir = self.model_registry.models_dir.lock()?; // lock 1
+ std::fs::create_dir_all(&*dir)?;
+ // ... later ...
+ let destination = self.model_registry.installed_model_path(&entry)?; // lock 2
+ ```
+ The directory could change between the two locks, leading to writing a file to a different path than the one checked for existence.
 
-**Tests `engine_bridge.rs`:** 3 placeholders (`assert!(true)`) que no ejecutan lógica real.
+ **Fix:** Lock once, hold the guard across both operations:
+ ```rust
+ let models_dir = self.model_registry.models_dir.lock().map_err(...)?;
+ let destination = models_dir.join(&entry.filename);
+ std::fs::create_dir_all(&*models_dir)?;
+ // ... use destination ...
+ ```
 
-**Impacto:** Bajo. Son warnings menores de estilo y tests sin funcionalidad.
+ ### 2.2 Non-Atomic Finalisation
+ **Severity:** Critical
+ **File:** `src/backend.rs` → `download_model()`
 
-### 3.3. Complejidad ciclomática estimada
+ ```rust
+ std::fs::copy(&temp_destination, &destination)?; // ← copy, not rename
+ let _ = std::fs::remove_file(&temp_destination);
+ ```
+ `std::fs::copy` is slow (duplicates bytes) and leaves the destination in a partially-written state if interrupted. `remove_file` return value is
+ ignored.
 
-| Módulo | Complejidad | Notas |
-|--------|-------------|-------|
-| `app.rs` | Alta (900+ líneas) | Mezcla de UI, estado y lógica de negocio. Buen uso de `drain_messages` para manejo de eventos, pero `render_preview_window` es extenso (200+ líneas). |
-| `backend.rs` | Media-Alta | Coordinación de múltiples subsistemas (download, modelos, procesamiento). |
-| `runtime_manager.rs` | Media | Lógica de setup/repair del engine Python con manejo de errores robusto. |
-| `engine_bridge.rs` | Baja-Media | Protocolo simple stdin/stdout. Buena separación de concerns. |
+ **Fix:** Use `std::fs::rename(&temp_destination, &destination)` which is atomic on the same filesystem. Always `remove_file` on the `Err` branch of a
+ `try` block, never ignore it.
 
----
+ ### 2.3 Progress Callback Floods the Channel
+ **Severity:** High
+ **File:** `src/backend.rs` → `download_model()`
 
-## 4. Análisis Fortaleza de Arquitectura
+ The `on_progress` closure is called for every network chunk (often 8KB). If the UI channel is bounded or the UI is repaint-bound, this floods the
+ message queue.
 
-### 4.1. ✅ Fortalezas
+ **Fix:** Throttle the callback. Only emit a message if progress changed by at least 1% or 500ms elapsed since the last update.
 
-| Aspecto | Evaluación |
-|---------|-----------|
-| **Separación Rust/Python** | Excelente. El engine es un subprocesso aislado con protocolo JSON definido. |
-| **Modelo de concurrencia** | Correcto uso de `tokio` para operaciones IO + `mpsc` para comunicación UI-backend. |
-| **Gestión de estado** | Centralizado en `AppState` con mensajes `AppMsg`. Patrón actor-like limpio. |
-| **Autoreparación del runtime** | `RuntimeManager.smart_repair()` puede diagnosticar y reparar dependencias rotas. |
-| **Sistema de paths** | `AppPaths` abstrae rutas de desarrollo vs. producción vs. portable. |
-| **Backend de inferencia extensible** | `BackendBase` + backends concretos (MDX, Demucs). Fácil añadir más. |
-| **Preview de audio** | Análisis de picos + reproducción con `rodio`. Experiencia de usuario rica. |
-| **Multiplataforma** | Soporte Windows/macOS/Linux con detección de GPU específico por SO. |
+ ---
 
-### 4.2. ⚠️ Áreas de Mejora Identificadas
+ ## 3. User Data & Configuration (`src/app_paths.rs`, `src/backend.rs`)
 
-#### A. **Acoplamiento UI-lógica en `app.rs`**
+ ### 3.1 AppPaths Hardcodes Relative Root
+ **Severity:** Critical
+ **File:** `src/app_paths.rs`
 
-El archivo `app.rs` (~1200 líneas) mezcla rendering de UI con lógica de aplicación. Se recomienda extraer:
+ ```rust
+ pub runtime_dir: root.join("runtime"),
+ pub models_dir: root.join("models"),
+ ```
 
-- Lógica de preview a módulo separado
-- Renderizado de cada pestaña (Separate, Models, Settings) a componentes dedicados
-- Configuración de la interfaz a un archivo de diseño separado
+ All user data (models, configs, cache, logs) is dumped into a single `root` directory, likely next to the binary. This violates platform conventions:
+ - Linux: `~/.local/share/prismsplit/`
+ - macOS: `~/Library/Application Support/prismsplit/`
+ - Windows: `%APPDATA%\PrismSplit\`
 
-**Recomendación:** Considerar un patrón MVP (Model-View-Presenter) o MVVM para desacoplar.
+ **Fix:** Use the `dirs` crate (already in `Cargo.toml`) to resolve proper platform directories:
+ ```rust
+ use dirs::{data_dir, cache_dir, config_dir};
+ ```
+ Models go to `data_dir()`, config to `config_dir()`, cache to `cache_dir()`, etc. The binary directory should be read-only.
 
-#### B. **Tests de integración vacíos**
+ ### 3.2 `load_config` Silently Loses Corrupt Data
+ **Severity:** Medium
+ **File:** `src/backend.rs`
 
-`tests/engine_bridge.rs` tiene 3 tests que son placeholders (`assert!(true)`). Estos tests no aportan valor y consumen tiempo de CI.
+ ```rust
+ fn load_config(path: &Path) -> AppConfig {
+     if let Ok(content) = std::fs::read_to_string(path) {
+         serde_json::from_str(&content).unwrap_or_default()
+     } else {
+         AppConfig::default()
+     }
+ }
+ ```
 
-**Recomendación:** Implementar mocks del engine Python o tests de integración reales con fixtures.
+ If `config.json` exists but contains invalid JSON, it is silently discarded and overwritten with defaults. The user loses all settings without
+ warning.
 
-#### C. **Manejo de errores en Python engine**
+ **Fix:** Distinguish between "file not found" (ok, use defaults) and "parse error" (log warning, backup the corrupt file, then use defaults).
 
-El engine Python usa excepciones genéricas (`except Exception`) sin logging ni debugging info:
+ ### 3.3 `save_config` is Not Atomic
+ **Severity:** Medium
+ **File:** `src/backend.rs`
 
-```python
-try:
-    from uvr_utils import ensure_uvr_in_sys_path
-except Exception:
-    ensure_uvr_in_sys_path = None  # type: ignore
-```
+ ```rust
+ let content = serde_json::to_string_pretty(config)?;
+ std::fs::write(path, content)?;
+ ```
 
-**Recomendación:** Añadir logging estructurado en el engine Python y exponer logs de vuelta a Rust.
+ If the process is killed during `write`, the config file ends up truncated.
 
-#### D. **Hardcoded strings y magics**
+ **Fix:** Write to a temp file (e.g., `config.json.tmp`) then `rename` to `config.json`.
 
-Valores hardcoded dispersos:
+ ### 3.4 Config Schema Has No Versioning
+ **Severity:** Low
+ **File:** `src/models.rs` (AppConfig)
 
-```rust
-// app.rs
-"replace-with-real-sha256"  // En backend.rs para modelos sin hash
-"Fast (CPU)"               // En state.rs - niveles de calidad
-"Normal (CUDA)"
-"High Quality (Overlap)"
-"Extreme (Aggressive Math)"
-```
+ `AppConfig` has no `version` field. If the schema changes in a future release, the app will deserialize old configs into the new shape (likely
+ silently dropping fields or failing).
 
-**Recomendación:** Centralizar en constantes o enum del tipo `QualityPreset`.
+ **Fix:** Add a `version: u32` field. On load, if version < current, run a migration function.
 
-#### E. **Proceso de sincronización de catálogo (`sync_uvr_catalog`)**
+ ---
 
-Realiza 10 requests HTTP concurrentes sin rate limiting ni retry. Si la API estuviera limitada, podría fallar o ser bloqueada.
+ ## 4. EGUI / UI (`src/app.rs`)
 
-**Recomendación:** Añadir retry con backoff exponencial y manejo de rate limits.
+ ### 4.1 `auto_save_config` Spawns a Task Every Frame
+ **Severity:** Critical
+ **File:** `src/app.rs` → `auto_save_config()`
 
-#### F. **Potencial deadlocks con `std::sync::Mutex`**
+ ```rust
+ if changed {
+     self.state.config = config.clone();
+     let backend = Arc::clone(&self.backend);
+     self.runtime.spawn(async move {
+         let _ = backend.update_config(config);
+     });
+ }
+ ```
 
-ModelRegistry usa `std::sync::Mutex` para `models_dir`. Si en el futuro se usara en contexto async, podría causar problemas.
+ This runs at 60 FPS while any slider, text field, or toggle changes. It spawns 60 tokio tasks per second, all writing to disk.
 
-**Recomendación:** Considerar `tokio::sync::RwLock` o `std::sync::RwLock` si la escritura es infrecuente.
+ **Fix:** Implement debouncing. Track `last_change_time: Instant`. Only save after 1–2 seconds of idle. Use a single
+ `Option<tokio::task::JoinHandle<()>>` and abort the previous one if a new change arrives.
 
-#### G. **Gestión de memoria en preview de audio**
+ ### 4.2 Preview Analysis is Fire-and-Forget with No Timeout
+ **Severity:** High
+ **File:** `src/app.rs` → `AppMsg::ProcessFinished` handler
 
-`analyze_audio_peaks` carga el archivo completo en memoria:
+ After separation, a `runtime.spawn` calls `analyze_audio_peaks` for each stem. If `rodio::Decoder` hangs on a malformed file, the task never
+ completes. The UI shows "Analyzing spectral data..." forever.
 
-```rust
-let samples: Vec<f32> = decoder
-    .map(|sample| (sample as f32) / (i16::MAX as f32))
-    .map(|s| s.abs())
-    .collect();
-```
+ **Fix:** Add a `tokio::time::timeout(Duration::from_secs(30), ...)` around the analysis. If it expires, send an `AppMsg::Log("WARNING: Preview
+ analysis timed out")`.
 
-Para archivos de audio largos, esto podría consumir mucha memoria.
+ ### 4.3 No Cancellation for Long-Running Jobs
+ **Severity:** High
+ **File:** `src/app.rs` → `process_audio()`
 
-**Recomendación:** Procesar en chunks streaming.
+ Once `process_audio` is called, the only way to stop it is killing the entire app (or waiting for the engine subprocess to finish). There is no "Stop"
+ or "Cancel" button.
 
----
+ **Fix:** Store the `JoinHandle` or child PID in state. Render a "CANCEL" button during processing that calls `child.kill()` or aborts the async task.
 
-## 5. Seguridad
+ ### 4.4 Drag & Drop Accepts Invalid Files
+ **Severity:** Medium
+ **File:** `src/app.rs` → `handle_dropped_files()`
 
-### 5.1. ✅ Prácticas seguras
+ ```rust
+ if let Some(path) = dropped.first()...
+ ```
 
-- **Verificación SHA-256** de modelos descargados (`download_manager::verify_sha256`)
-- **Ejecución sandboxed** del engine Python como subprocesso separado
-- **No ejecución de código arbitrario** en el protocolo stdin/stdout
+ No validation of file extension, MIME type, or whether it is a file vs directory. Dropping a folder or a `.txt` will set it as `input_file` and fail
+ later.
 
-### 5.2. ⚠️ Consideraciones de seguridad
+ **Fix:** Filter by extension (`wav`, `mp3`, `flac`, `m4a`, `ogg`, `aac`). Show an error log if the dropped item is invalid.
 
-| Problema | Severidad | Descripción |
-|----------|-----------|-------------|
-| **Downloads HTTP sin verificación TLS** | Media | `reqwest` usa rustls-tls (correcto). Verificar que `http1_only` no debilita seguridad. |
-| **Exposición de stderr de Python** | Baja | `stderr(Stdio::inherit)` filtra errores de Python al terminal. En producción, considerar captura. |
-| **Hash SHA-256 placeholder** | Media | `"replace-with-real-sha256"` es bypassed por `verify_sha256`. Modelos de UVR sin hash real verificable. |
-| **Path traversal potencial** | Baja | `output_dir` y `input_file` de usuario no se sanitizan antes de ser pasados a filesystem. |
+ ### 4.5 Waveform Rendering Recomputes Every Frame
+ **Severity:** Medium
+ **File:** `src/app.rs` → `render_preview_window()`
 
----
+ Inside the `Window::show` closure, the waveform is painted fresh every frame by iterating all `stem.peaks`. The peaks are already computed, but the
+ painting logic (grid lines, bar calculations) runs 60 times per second.
 
-## 6. Rendimiento
+ **Fix:** Cache the waveform into an `egui::TextureHandle` (or an `egui::Shape` list) when `PreviewStemsLoaded` arrives. In `render_preview_window`,
+ just draw the cached mesh/texture.
 
-### 6.1. Hotspots potenciales
+ ### 4.6 eframe Persistence Feature is Unused
+ **Severity:** Low
+ **File:** `Cargo.toml`, `src/app.rs`
 
-1. **`analyze_audio_peaks`** — Carga completa de archivo de audio en memoria
-2. **`process_audio`** — Inference síncrona bloquea el thread de async, aunque está en `tokio::spawn`
-3. **` sync_uvr_catalog`** — 10 requests concurrentes sin limitación
-4. **GPU detection** — Ejecuta `wmic`, `nvidia-smi`, o `lspci` en cada `doctor()` llama. Podría cachearse.
+ `eframe` is compiled with `features = ["persistence"]` but `PrismSplitApp` does not implement any `save` / `load` for window size, position, or last
+ active tab.
 
-### 6.2. Optimizaciones recomendadas
+ **Fix:** Implement `eframe::App::save` to persist at least:
+ - Window size and position
+ - Last active `Tab`
+ - Whether the preview window was open
 
-| Optimización | Impacto | Esfuerzo |
-|-------------|---------|----------|
-| Cachear resultado de GPU detection | Medio | Bajo |
-| Streaming de análisis de audio en preview | Alto | Medio |
-| Paginación del catálogo de modelos | Medio | Bajo |
-| Recycling de procesos Python | Alto | Alto |
+ This provides a much better UX on restart.
 
----
+ ---
 
-## 7. Dependencias y Mantenimiento
+ ## 5. Playback Controller (`src/preview.rs`)
 
-### 7.1. Rust (Cargo.toml)
+ ### 5.1 `OutputStream` Created on Every `play()` Call
+ **Severity:** Medium
+ **File:** `src/preview.rs`
 
-```toml
-serde = "1.0"
-tokio = { version = "1", features = ["full"] }
-anyhow = "1.0"
-eframe = "0.28"
-egui = "0.28"
-rodio = "0.19"
-reqwest = "0.12"
-```
+ ```rust
+ let (stream, stream_handle) = OutputStream::try_default()?;
+ let sink = Sink::try_new(&stream_handle)?;
+ ```
 
-**Nivel de madurez:** Mature. `eframe`/`egui` v0.28 es estable. `anyhow`/`thiserror` son estándar.
+ A new `OutputStream` is allocated every time the user hits play. This is slow and can fail if the default audio device is temporarily unavailable. The
+ stream is dropped on `stop()`.
 
-**Observación:** `reqwest` usa default-features en lugar de deshabilitar. Podría reducirse el tamaño del binario.
+ **Fix:** Create the `OutputStream` once in `PlaybackController::new()` and reuse it. Only recreate if `play()` fails with a device error.
 
-### 7.2. Python (engine/pyproject.toml)
+ ### 5.2 `PlaybackController` Does Not Report Errors on `stop()`
+ **Severity:** Low
+ **File:** `src/preview.rs`
 
-```toml
-dependencies = [
-    "oniquitous",
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
-    "onnxruntime>=1.14.1",
-    "numpy==1.23.5",        # Pin estricto - puede causar conflictos
-    "soundfile==0.11.0",
-    "librosa==0.9.2",
-    "requests>=2.25.1"
-]
-```
+ If `sink.stop()` fails (dangling pointer, device removed), the error is silently dropped.
 
-**Observaciones:**
-- **numpy 1.23.5** es una versión antigua (actual es 2.x). Enlace con versiones modernas de numpy puede haber resuelto conflictos.
-- Capas **torch**/**torchaudio** son pesadas (~2GB). El proceso de empaquetado requiere incluir estas dependencias.
-- El runtime requiere **ffmpeg** para decodificación de audio.
+ **Fix:** At minimum, log the error via `eprintln!` or a callback.
 
----
+ ---
 
-## 8. Historial de Git y Evolución
+ ## 6. Model Registry (`src/model_registry.rs`)
 
-### Commits recientes (últimos 20)
+ ### 6.1 `Mutex<PathBuf>` for `models_dir` is Unnecessary
+ **Severity:** Low
+ **File:** `src/model_registry.rs`
 
-```
-33e04a6 Update README for egui/eframe UI and docs
-97df21c Add macOS/Linux GPU detection and MPS support
-b2a75df Rename analyze_wav_peaks to analyze_audio_peaks
-0cb3735 Update docs for Rust/egui migration
-b5166be Add release workflow and packager config
-7175e58 chore: update .gitignore with standard patterns
-fff6de6 docs: apply stop-slop rules to reformat documentation
-2b4ca55 refactor: migrate UI to egui, remove frontend web assets
-```
+ `models_dir` is a `Mutex<PathBuf>` but it is only written in `set_models_dir` and read elsewhere. There is no concurrent mutation. This adds lock
+ overhead and complexity.
 
-### Análisis de evolución
+ **Fix:** Use `std::sync::RwLock` or, better, wrap `ModelRegistry` in an `Arc<RwLock<_>>` at the `Backend` level and keep `models_dir` as a plain
+ `PathBuf` inside the registry.
 
-- **Commit `2b4ca55`** — Migración completa de frontend web a egui/eframe (Tauri anterior)
-- **Commit `97df21c`** — Añadido soporte multiplataforma para GPU (CUDA, MPS, CoreML)
-- **Tendencia:** Desacoplismo de frontend web en favor de UI nativa para mejor rendimiento y reducir dependencias
+ ---
 
----
+ ## 7. Summary Table
 
-## 9. Coverage de Tests
+ | # | Severity | File | Issue | Key Action |
+ |---|----------|------|-------|------------|
+ | 1 | Critical | `download_manager.rs` | Non-atomic temp file handling | Use `rename`, not `copy` + `remove` |
+ | 2 | Critical | `app_paths.rs` | Hardcoded relative root for data | Use `dirs` crate for platform dirs |
+ | 3 | Critical | `app.rs` | `auto_save_config` spawns task every frame | Debounce saves (1–2s idle) |
+ | 4 | High | `backend.rs` | Race condition on `models_dir` mutex | Lock once across operations |
+ | 5 | High | `backend.rs` | No retry on download failure | Add retry loop + backoff |
+ | 6 | High | `app.rs` | Preview analysis has no timeout | Wrap in `tokio::time::timeout` |
+ | 7 | High | `app.rs` | No cancellation for running jobs | Add stop/cancel button + kill PID |
+ | 8 | Medium | `download_manager.rs` | Silent hash skip | Return typed result + UI warning |
+ | 9 | Medium | `backend.rs` | Progress callback floods channel | Throttle to 1% or 500ms |
+ | 10 | Medium | `backend.rs` | `save_config` not atomic | Write to temp + `rename` |
+ | 11 | Medium | `app.rs` | D&D accepts invalid files | Validate extension |
+ | 12 | Medium | `app.rs` | Waveform repaints every frame | Cache as texture/shape |
+ | 13 | Medium | `preview.rs` | New `OutputStream` per play | Reuse stream, recreate on failure |
+ | 14 | Low | `backend.rs` | Config has no schema version | Add `version: u32` field |
+ | 15 | Low | `app.rs` | eframe persistence unused | Save window state + last tab |
+ | 16 | Low | `model_registry.rs` | Unnecessary `Mutex<PathBuf>` | Use `RwLock` or plain field |
+ | 17 | Low | `download_manager.rs` | Hardcoded User-Agent | Use crate version constant |
 
-| Módulo | Estado | Cobertura estimada |
-|--------|--------|-------------------|
-| `models.rs` | ✅ Con tests unitarios | 80% |
-| `model_registry.rs` | ✅ Tests de integración | 60% |
-| `download_manager.rs` | ✅ Tests básicos | 40% |
-| `runtime_manager.rs` | ⚠️ Tests básicos sin mocking | 30% |
-| `engine_bridge.rs` | ❌ Placeholders | 5% |
-| `backend.rs` | ❌ No hay tests de integración | 10% |
-| `app.rs` | ❌ No hay tests UI | 0% |
-| Engine Python | ❌ Solo tests estructurales | 20% |
+ ---
 
-**Tests Python:**
-- `engine/python/tests/test_entrypoint.py`
-- `engine/python/tests/test_protocol.py`
+ ## 8. Recommended Execution Order
 
-Ambos son tests básicos de estructura. No hay tests de inferencia real.
-
----
-
-## 10. Licencias y Legales
-
-- **UVR (Ultimate Vocal Remover):** Contiene código de terceros con sus propias licencias
-- **Modelos ONNX/PyTorch:** Licenciamiento específico por modelo
-- **Logo/assets:** SVG propio del proyecto
-- **No se detectó** `LICENSE` file en la raíz del repositorio
-
----
-
-## 11. Lista de Acciones Recomendadas
-
-### 🔴 Crítico (Bloqueante para producción)
-
-1. **Implementar tests de integración del engine** — La mayoría de tests son placeholders
-2. **Añadir `LICENSE`** al repositorio
-3. **Revisar y fijar dependencias Python** con conflictos conocidos (numpy 1.23.5 es muy antiguo)
-4. **Documentar requirements de runtime** (versión exacta de Python, PyTorch, CUDA drivers)
-
-### 🟡 Importante (Calidad)
-
-5. **Refactorizar `app.rs`** — Extraer componentes UI a módulos separados
-6. **Implementar caching de GPU info** en `RuntimeManager`
-7. **Añadir retry y rate limiting** en `sync_uvr_catalog`
-8. **Optimizar `analyze_audio_peaks`** para streaming de audio grande
-9. **Centralizar constantes de strings** (quality presets, etc.)
-10. **Añadir logging estructurado** en engine Python
-11. **Revisar tests `engine_bridge.rs`** — Eliminar placeholders o implementar mocks
-
-### 🟢 Deseable (Mantenimiento)
-
-12. **Actualizar `egui`/`eframe`** a la última versión estable (si hay breaking changes)
-13. **Reducir features de `reqwest`** para bajar tamaño del binario
-14. **Implementar `Default` para `PlaybackController`** (Clippy sugerencia)
-15. **Añadir linter Python** (ruff, black) a CI/CD
-16. **Documentar protocolo JSON** entre Rust y Python engine
-
----
-
-## 12. Conclusión
-
-**PrismSplit** es una aplicación bien arquitectada que sigue buenas prácticas de separación de concerns (Rust UI / Python Engine). El **patrón de arquitectura híbrida** es su mayor fortaleza, permitiendo un frontend nativo de alto rendimiento con un engine de ML aislado.
-
-### Estado general: **Bueno con mejoras necesarias**
-
-- **Arquitectura:** ⭐⭐⭐⭐⭐ (5/5)
-- **Calidad de código Rust:** ⭐⭐⭐⭐☆ (4/5) — Warnings menores, pero buena estructura
-- **Calidad de código Python:** ⭐⭐⭐☆☆ (3/5) — Básico pero funcional
-- **Cobertura de tests:** ⭐⭐☆☆☆ (2/5) — Tests insuficientes, muchos placeholders
-- **Documentación:** ⭐⭐⭐⭐☆ (4/5) — Buena documentación externa, pero falta interna
-- **Seguridad:** ⭐⭐⭐⭐☆ (4/5) — En general bien, con áreas a pulir
-- **Rendimiento:** ⭐⭐⭐⭐☆ (4/5) — Mejoras de caching y streaming pendientes
-
-**Veredicto:** El proyecto está **marcha** y es funcional. Para un release de producción, priorizar: tests de integración, refactorización de `app.rs`, y optimización de memoria en preview de audio.
-
----
-
-> *Auditoría generada automáticamente. Consultar el código fuente para detalles adicionales.*
+ 1. **Fix app paths** (Item 2) — touches almost every other file.
+ 2. **Fix `auto_save_config`Transaction** (Item 3) — high user impact, simple fix.
+ 3. **Fix `download_model` atomicity** (Items 1, 4, 5, 9) — core data integrity.
+ 4. **Add job cancellation** (Item 7) — major UX improvement.
+ 5. **Fix preview timeout** (Item 6) — prevents UI lockup.
+ 6. **Add debounced progress / D&D validation** (Items 8, 11) — polish.
+ 7. **Waveform caching + eframe persistence** (Items 12, 15) — performance.

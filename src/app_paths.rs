@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub struct AppPaths {
     pub root: PathBuf,
     pub resource_dir: PathBuf,
+    pub app_data_dir: PathBuf,
     pub runtime_dir: PathBuf,
     pub python_dir: PathBuf,
     pub venv_dir: PathBuf,
@@ -18,18 +19,26 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn new(root: PathBuf, resource_dir: PathBuf) -> Self {
+        let app_data_dir = dirs::data_dir()
+            .unwrap_or_else(|| root.clone())
+            .join("PrismSplit");
+        let app_cache_dir = dirs::cache_dir()
+            .unwrap_or_else(|| root.clone())
+            .join("PrismSplit");
+
         Self {
-            runtime_dir: root.join("runtime"),
-            python_dir: root.join("runtime").join("python"),
-            venv_dir: root.join("runtime").join("venv"),
-            engine_dir: root.join("engine"),
-            models_dir: root.join("models"),
-            manifests_dir: root.join("manifests"),
-            jobs_dir: root.join("jobs"),
-            logs_dir: root.join("logs"),
-            cache_dir: root.join("cache"),
+            runtime_dir: app_data_dir.join("runtime"),
+            python_dir: app_data_dir.join("runtime").join("python"),
+            venv_dir: app_data_dir.join("runtime").join("venv"),
+            engine_dir: app_data_dir.join("engine"),
+            models_dir: app_data_dir.join("models"),
+            manifests_dir: app_data_dir.join("manifests"),
+            jobs_dir: app_data_dir.join("jobs"),
+            logs_dir: app_data_dir.join("logs"),
+            cache_dir: app_cache_dir.join("cache"),
             root,
             resource_dir,
+            app_data_dir,
         }
     }
 
@@ -72,7 +81,7 @@ impl AppPaths {
     }
 
     pub fn installed_uvr_dir(&self) -> PathBuf {
-        self.root.join("uvr")
+        self.app_data_dir.join("uvr")
     }
 
     pub fn installed_engine_script(&self) -> PathBuf {

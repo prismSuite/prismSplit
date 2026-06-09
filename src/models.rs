@@ -64,9 +64,11 @@ pub struct DownloadProgressEvent {
     pub progress: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
+    #[serde(default)]
+    pub version: u32,
     pub models_dir: Option<String>,
     pub cache_dir: Option<String>,
     pub last_input_file: Option<String>,
@@ -74,4 +76,19 @@ pub struct AppConfig {
     pub last_selected_model: Option<String>,
     pub last_quality: Option<String>,
     pub last_export_format: Option<String>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            models_dir: None,
+            cache_dir: None,
+            last_input_file: None,
+            last_output_dir: None,
+            last_selected_model: None,
+            last_quality: None,
+            last_export_format: None,
+        }
+    }
 }

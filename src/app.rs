@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::engine_bridge::EngineEvent;
 use crate::panels::log_console;
+use crate::panels::models::has_trusted_checksum;
 use crate::state::{AppMsg, AppState, Tab};
 use crate::widgets::{fieldset, nav_button, status_chip};
 use eframe::egui::{self, Align, Color32, RichText};
@@ -9,22 +10,38 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub struct PrismSplitApp {
-    backend: Arc<Backend>,
-    runtime: Arc<tokio::runtime::Runtime>,
-    state: AppState,
-    playback_controller: crate::preview::PlaybackController,
+    pub(crate) backend: Arc<Backend>,
+    pub(crate) runtime: Arc<tokio::runtime::Runtime>,
+    pub(crate) state: AppState,
+    pub(crate) playback_controller: crate::preview::PlaybackController,
+    pub(crate) save_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl PrismSplitApp {
-    pub fn new(backend: Arc<Backend>, runtime: Arc<tokio::runtime::Runtime>) -> Self {
+    pub fn new(
+        backend: Arc<Backend>,
+        runtime: Arc<tokio::runtime::Runtime>,
+        storage: Option<&dyn eframe::Storage>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
-        let state = AppState::new(tx, rx);
+        let mut state = AppState::new(tx, rx);
+
+        if let Some(storage) = storage {
+            if let Some(tab) = eframe::get_value::<Tab>(storage, "active_tab") {
+                state.active_tab = tab;
+            }
+            if let Some(enable_preview) = eframe::get_value::<bool>(storage, "enable_preview") {
+                state.enable_preview = enable_preview;
+            }
+        }
+
         let playback_controller = crate::preview::PlaybackController::new();
         let app = Self {
             backend,
             runtime,
             state,
             playback_controller,
+            save_handle: None,
         };
         app.refresh_boot_state();
         app
@@ -46,7 +63,7 @@ impl PrismSplitApp {
 
 
 
-    fn refresh_health(&self) {
+    pub(crate) fn refresh_health(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         self.runtime.spawn(async move {
@@ -55,7 +72,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn load_catalog(&self) {
+    pub(crate) fn load_catalog(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         self.runtime.spawn(async move {
@@ -67,7 +84,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn prepare_engine(&self) {
+    pub(crate) fn prepare_engine(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let _ = tx.send(AppMsg::Log("INIT: Preparing embedded engine...".into()));
@@ -77,7 +94,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn repair_engine(&self) {
+    pub(crate) fn repair_engine(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let _ = tx.send(AppMsg::Log("INIT: Starting Smart Doctor Repair for engine...".into()));
@@ -87,7 +104,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn download_model(&self, model_id: String) {
+    pub(crate) fn download_model(&self, model_id: String) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let tx_progress = tx.clone();
@@ -106,7 +123,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn sync_catalog(&self) {
+    pub(crate) fn sync_catalog(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let _ = tx.send(AppMsg::Log(
@@ -118,7 +135,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn scan_local_models(&self, path: String) {
+    pub(crate) fn scan_local_models(&self, path: String) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let _ = tx.send(AppMsg::Log(format!(
@@ -134,7 +151,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn process_audio(&self) {
+    pub(crate) fn process_audio(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let input_file = self.state.input_file.clone();
@@ -181,7 +198,7 @@ impl PrismSplitApp {
         });
     }
 
-    fn browse_input_file(&mut self) {
+    pub(crate) fn browse_input_file(&mut self) {
         if let Some(file) = rfd::FileDialog::new()
             .add_filter("Audio", &["wav", "mp3", "flac", "m4a", "aac", "ogg"])
             .pick_file()
@@ -192,7 +209,7 @@ impl PrismSplitApp {
         }
     }
 
-    fn browse_output_dir(&mut self) {
+    pub(crate) fn browse_output_dir(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
             self.state.output_dir = folder.display().to_string();
             self.state
@@ -200,19 +217,19 @@ impl PrismSplitApp {
         }
     }
 
-    fn browse_models_dir(&mut self) {
+    pub(crate) fn browse_models_dir(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
             self.state.config.models_dir = Some(folder.display().to_string());
         }
     }
 
-    fn browse_cache_dir(&mut self) {
+    pub(crate) fn browse_cache_dir(&mut self) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
             self.state.config.cache_dir = Some(folder.display().to_string());
         }
     }
 
-    fn apply_settings(&self) {
+    pub(crate) fn apply_settings(&self) {
         let tx = self.state.tx.clone();
         let backend = Arc::clone(&self.backend);
         let config = self.state.config.clone();
@@ -268,9 +285,13 @@ impl PrismSplitApp {
         if changed {
             self.state.config = config.clone();
             let backend = Arc::clone(&self.backend);
-            self.runtime.spawn(async move {
+            if let Some(handle) = self.save_handle.take() {
+                handle.abort();
+            }
+            self.save_handle = Some(self.runtime.spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 let _ = backend.update_config(config);
-            });
+            }));
         }
     }
 
@@ -429,26 +450,39 @@ impl PrismSplitApp {
 
                                 self.runtime.spawn(async move {
                                     let _ = tx.send(AppMsg::Log("PREVIEW: Analyzing spectral data...".into()));
-                                    let mut stems = Vec::new();
-                                    if let Ok(peaks) = crate::preview::analyze_audio_peaks(&vocals_path, 180) {
-                                        stems.push(crate::preview::StemPreview {
-                                            id: "vocals".into(),
-                                            name: "VOCALS (Voz)".into(),
-                                            file_path: vocals_path,
-                                            peaks,
-                                            is_playing: false,
-                                        });
+                                    
+                                    let analysis_future = async {
+                                        let mut stems = Vec::new();
+                                        if let Ok(peaks) = crate::preview::analyze_audio_peaks(&vocals_path, 180) {
+                                            stems.push(crate::preview::StemPreview {
+                                                id: "vocals".into(),
+                                                name: "VOCALS (Voz)".into(),
+                                                file_path: vocals_path,
+                                                peaks,
+                                                is_playing: false,
+                                            });
+                                        }
+                                        if let Ok(peaks) = crate::preview::analyze_audio_peaks(&instrumental_path, 180) {
+                                            stems.push(crate::preview::StemPreview {
+                                                id: "instrumental".into(),
+                                                name: "INSTRUMENTAL (Música)".into(),
+                                                file_path: instrumental_path,
+                                                peaks,
+                                                is_playing: false,
+                                            });
+                                        }
+                                        stems
+                                    };
+
+                                    match tokio::time::timeout(std::time::Duration::from_secs(30), analysis_future).await {
+                                        Ok(stems) => {
+                                            let _ = tx.send(AppMsg::PreviewStemsLoaded(stems));
+                                        }
+                                        Err(_) => {
+                                            let _ = tx.send(AppMsg::Log("WARNING: Preview analysis timed out".into()));
+                                            let _ = tx.send(AppMsg::PreviewStemsLoaded(Vec::new()));
+                                        }
                                     }
-                                    if let Ok(peaks) = crate::preview::analyze_audio_peaks(&instrumental_path, 180) {
-                                        stems.push(crate::preview::StemPreview {
-                                            id: "instrumental".into(),
-                                            name: "INSTRUMENTAL (Música)".into(),
-                                            file_path: instrumental_path,
-                                            peaks,
-                                            is_playing: false,
-                                        });
-                                    }
-                                    let _ = tx.send(AppMsg::PreviewStemsLoaded(stems));
                                 });
                             }
                         }
@@ -467,469 +501,13 @@ impl PrismSplitApp {
         }
     }
 
-    fn render_setup(&mut self, ui: &mut egui::Ui) {
-        fieldset(ui, "CORE_SETUP", |ui| {
-            if let Some(health) = &self.state.health {
-                ui.label(format!("Runtime ready: {}", health.runtime_ready));
-                ui.label(format!("Dependencies ready: {}", health.dependencies_ready));
-                ui.label(format!("Catalog ready: {}", health.model_catalog_ready));
-                ui.label(format!("Installed models: {}", health.installed_model_count));
-            } else {
-                ui.label("No engine health data yet.");
-            }
-
-            if let Some(status) = &self.state.setup_status {
-                ui.separator();
-                ui.label(RichText::new("Last prepare status").strong());
-                ui.label(format!("Ready: {}", status.ready));
-                if !status.completed_stages.is_empty() {
-                    ui.label(format!(
-                        "Stages: {}",
-                        status.completed_stages.join(", ")
-                    ));
-                }
-                if let Some(error) = &status.last_error {
-                    ui.colored_label(Color32::from_rgb(242, 139, 130), error);
-                }
-            }
-
-            ui.add_space(10.0);
-            ui.columns(3, |columns| {
-                if crate::widgets::custom_button(&mut columns[0], "PREPARE ENGINE", true, Color32::from_rgb(34, 211, 238)) {
-                    self.prepare_engine();
-                }
-                if crate::widgets::custom_button(&mut columns[1], "SMART REPAIR", true, Color32::from_rgb(245, 158, 11)) {
-                    self.repair_engine();
-                }
-                if crate::widgets::custom_button(&mut columns[2], "REFRESH", true, Color32::from_rgb(180, 187, 193)) {
-                    self.refresh_health();
-                }
-            });
-        });
+    pub fn browse_local_scan(&mut self) {
+        if let Some(path) = rfd::FileDialog::new().pick_folder() {
+            self.scan_local_models(path.display().to_string());
+        }
     }
 
-    fn render_separation(&mut self, ui: &mut egui::Ui) {
-        ui.columns(2, |columns| {
-            fieldset(&mut columns[0], "I/O TARGETS", |ui| {
-                ui.label("INPUT FILE");
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.state.input_file);
-                    if ui.button("BROWSE").clicked() {
-                        self.browse_input_file();
-                    }
-                });
-
-                ui.label("OUTPUT DIRECTORY");
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.state.output_dir);
-                    if ui.button("BROWSE").clicked() {
-                        self.browse_output_dir();
-                    }
-                });
-
-                if !self.state.input_file.is_empty() {
-                    ui.label(
-                        RichText::new("Tip: you can also drag a file onto the window.")
-                            .italics()
-                            .small(),
-                    );
-                }
-            });
-
-            fieldset(&mut columns[1], "ENGINE_PARAMS", |ui| {
-                ui.label("MODEL");
-                egui::ComboBox::from_id_source("model_selector")
-                    .selected_text(selected_model_label(&self.state))
-                    .show_ui(ui, |ui| {
-                        for entry in &self.state.catalog {
-                            ui.selectable_value(
-                                &mut self.state.selected_model,
-                                entry.id.clone(),
-                                format!("{} [{}]", entry.name, entry.backend),
-                            );
-                        }
-                    });
-
-                ui.label("EXPORT FORMAT");
-                egui::ComboBox::from_id_source("export_format")
-                    .selected_text(self.state.export_format.as_str())
-                    .show_ui(ui, |ui| {
-                        for option in ["WAV", "FLAC", "MP3"] {
-                            ui.selectable_value(
-                                &mut self.state.export_format,
-                                option.to_string(),
-                                option,
-                            );
-                        }
-                    });
-
-                ui.label("QUALITY");
-                egui::ComboBox::from_id_source("quality")
-                    .selected_text(self.state.quality.as_str())
-                    .show_ui(ui, |ui| {
-                        for option in crate::state::QUALITY_PRESETS {
-                            ui.selectable_value(&mut self.state.quality, option.to_string(), *option);
-                        }
-                    });
-
-                ui.add_space(8.0);
-                ui.checkbox(&mut self.state.enable_preview, "PREVISUALIZAR STEMS EN VIVO");
-            });
-        });
-
-        ui.add_space(12.0);
-        fieldset(ui, "EXECUTION_NODE", |ui| {
-            if self.state.is_processing {
-                // Animate VU meter
-                let time = ui.input(|i| i.time);
-                let val_l = (time * 8.0).sin().abs() as f32 * 0.7 + (time * 19.0).cos().abs() as f32 * 0.25;
-                let val_l = val_l.clamp(0.1, 0.98);
-                let peak_l = val_l + 0.02;
-                ui.label(RichText::new("L-CH LEVEL").monospace().small());
-                crate::widgets::vu_meter(ui, val_l, peak_l);
-                ui.add_space(4.0);
-                
-                let val_r = (time * 7.1).cos().abs() as f32 * 0.65 + (time * 15.3).sin().abs() as f32 * 0.3;
-                let val_r = val_r.clamp(0.1, 0.98);
-                let peak_r = val_r + 0.02;
-                ui.label(RichText::new("R-CH LEVEL").monospace().small());
-                crate::widgets::vu_meter(ui, val_r, peak_r);
-                ui.add_space(8.0);
-
-                ui.add(
-                    egui::ProgressBar::new(self.state.process_progress / 100.0)
-                        .text(format!("{:.0}% active", self.state.process_progress)),
-                );
-            } else {
-                // Show noise floor (signal present indicator)
-                ui.label(RichText::new("L-CH LEVEL (STANDBY)").monospace().small());
-                crate::widgets::vu_meter(ui, 0.02, 0.05);
-                ui.add_space(4.0);
-                ui.label(RichText::new("R-CH LEVEL (STANDBY)").monospace().small());
-                crate::widgets::vu_meter(ui, 0.015, 0.04);
-                ui.add_space(8.0);
-            }
-
-            let can_start = !self.state.input_file.trim().is_empty()
-                && !self.state.selected_model.trim().is_empty()
-                && !self.state.is_processing;
-
-            if crate::widgets::custom_button(
-                ui,
-                "START SEPARATION ENGINE",
-                can_start,
-                Color32::from_rgb(34, 211, 238),
-            ) {
-                self.state.is_processing = true;
-                self.process_audio();
-            }
-        });
-    }
-
-    fn render_models(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if ui.button("SYNC UVR CATALOG").clicked() {
-                self.sync_catalog();
-            }
-            if ui.button("SCAN LOCAL MODELS").clicked() {
-                if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                    self.scan_local_models(path.display().to_string());
-                }
-            }
-            if ui.button("REFRESH").clicked() {
-                self.load_catalog();
-            }
-        });
-        ui.add_space(8.0);
-
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            for entry in self.state.catalog.clone() {
-                fieldset(ui, &entry.name, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("Backend: {}", entry.backend));
-                        ui.separator();
-                        ui.label(format!("Version: {}", entry.version));
-                        ui.separator();
-                        ui.label(format!("Installed: {}", entry.is_installed));
-                    });
-                    ui.label(format!("File: {}", entry.filename));
-                    if entry.size_bytes > 0 {
-                        ui.label(format!(
-                            "Size: {:.2} MB",
-                            entry.size_bytes as f64 / (1024.0 * 1024.0)
-                        ));
-                    }
-
-                    if self.state.downloading_id.as_deref() == Some(entry.id.as_str()) {
-                        ui.add(
-                            egui::ProgressBar::new(self.state.download_progress / 100.0)
-                                .text(format!("{:.0}%", self.state.download_progress)),
-                        );
-                    }
-
-                    let label = if entry.is_installed {
-                        "INSTALLED"
-                    } else {
-                        "DOWNLOAD"
-                    };
-                    if ui
-                        .add_enabled(
-                            !entry.is_installed
-                                && self.state.downloading_id.is_none(),
-                            egui::Button::new(label),
-                        )
-                        .clicked()
-                    {
-                        self.download_model(entry.id.clone());
-                    }
-                });
-                ui.add_space(6.0);
-            }
-        });
-    }
-
-    fn render_settings(&mut self, ui: &mut egui::Ui) {
-        ui.columns(2, |columns| {
-            fieldset(&mut columns[0], "SYSTEM_PATHS", |ui| {
-                ui.label("MODELS DIRECTORY");
-                ui.horizontal(|ui| {
-                    let value = self.state.config.models_dir.get_or_insert_with(String::new);
-                    ui.text_edit_singleline(value);
-                    if ui.button("BROWSE").clicked() {
-                        self.browse_models_dir();
-                    }
-                });
-
-                ui.label("CACHE DIRECTORY");
-                ui.horizontal(|ui| {
-                    let value = self.state.config.cache_dir.get_or_insert_with(String::new);
-                    ui.text_edit_singleline(value);
-                    if ui.button("BROWSE").clicked() {
-                        self.browse_cache_dir();
-                    }
-                });
-            });
-
-            fieldset(&mut columns[1], "ENGINE_MAINTENANCE", |ui| {
-                ui.label("HARDWARE ACCELERATION");
-                if let Some(health) = &self.state.health {
-                    if health.gpu_devices.is_empty() {
-                        ui.label("No GPU devices detected.");
-                    } else {
-                        for gpu in &health.gpu_devices {
-                            ui.label(gpu);
-                        }
-                    }
-                } else {
-                    ui.label("Health data unavailable.");
-                }
-
-                ui.add_space(6.0);
-                if ui.button("APPLY SETTINGS").clicked() {
-                    self.apply_settings();
-                }
-
-                ui.separator();
-                ui.label("SMART DIAGNOSTICS & SYSTEM SAFETY");
-                ui.horizontal(|ui| {
-                    if ui.button("SMART REPAIR ENGINE").clicked() {
-                        self.repair_engine();
-                    }
-                    if ui.button("FORCE RE-PREPARE").clicked() {
-                        self.prepare_engine();
-                    }
-                });
-            });
-        });
-    }
-
-
-
-    fn render_preview_window(&mut self, ctx: &egui::Context) {
-        let Some(stems) = self.state.active_preview_stems.clone() else {
-            return;
-        };
-
-        egui::Window::new("▸ PRISMPREVIEW // LIVE STEMS VISUALIZER")
-            .collapsible(false)
-            .resizable(true)
-            .default_width(850.0)
-            .default_height(480.0)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(ctx, |ui| {
-                ui.add_space(4.0);
-                
-                ui.horizontal(|ui| {
-                    ui.colored_label(
-                        Color32::from_rgb(34, 211, 238),
-                        RichText::new("● PREVIEW MODE ACTIVE").monospace().strong(),
-                    );
-                    ui.separator();
-                    ui.label(RichText::new("Stems separated in temporary environment.").monospace().small());
-                });
-                
-                ui.add_space(10.0);
-
-                let mut stem_to_play: Option<String> = None;
-                let mut stem_to_save: Option<(String, String)> = None;
-
-                egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
-                    for stem in stems.iter() {
-                        crate::widgets::fieldset(ui, &stem.name, |ui| {
-                            ui.horizontal(|ui| {
-                                let btn_label = if stem.is_playing { "⏸ PAUSE" } else { "▶ PLAY" };
-                                let btn_color = if stem.is_playing {
-                                    Color32::from_rgb(245, 158, 11)
-                                } else {
-                                    Color32::from_rgb(34, 211, 238)
-                                };
-                                
-                                let play_btn = egui::Button::new(RichText::new(btn_label).monospace().strong().color(Color32::from_rgb(5, 5, 5)))
-                                    .fill(btn_color)
-                                    .min_size(egui::vec2(85.0, 34.0));
-                                
-                                if ui.add(play_btn).clicked() {
-                                    stem_to_play = Some(stem.id.clone());
-                                }
-
-                                ui.add_space(6.0);
-
-                                let (rect, _response) = ui.allocate_exact_size(
-                                    egui::vec2(ui.available_width() - 95.0, 48.0),
-                                    egui::Sense::hover(),
-                                );
-                                
-                                let painter = ui.painter_at(rect);
-                                painter.rect_filled(rect, 0.0, Color32::from_rgb(17, 17, 17));
-                                
-                                let grid_stroke = egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 4));
-                                for x in (rect.left() as i32..rect.right() as i32).step_by(24) {
-                                    painter.line_segment([egui::pos2(x as f32, rect.top()), egui::pos2(x as f32, rect.bottom())], grid_stroke);
-                                }
-                                painter.line_segment(
-                                    [egui::pos2(rect.left(), rect.center().y), egui::pos2(rect.right(), rect.center().y)],
-                                    egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 8)),
-                                );
-
-                                let peak_count = stem.peaks.len();
-                                if peak_count > 0 {
-                                    let bar_width = rect.width() / (peak_count as f32);
-                                    let active_color = if stem.is_playing {
-                                        Color32::from_rgb(34, 211, 238)
-                                    } else {
-                                        Color32::from_rgb(120, 130, 145)
-                                    };
-                                    
-                                    for (i, &amp) in stem.peaks.iter().enumerate() {
-                                        let x = rect.left() + (i as f32) * bar_width + (bar_width / 2.0);
-                                        let half_height = (amp * (rect.height() / 2.0)) * 0.95;
-                                        let top_y = rect.center().y - half_height;
-                                        let bottom_y = rect.center().y + half_height;
-                                        
-                                        painter.line_segment(
-                                            [egui::pos2(x, top_y), egui::pos2(x, bottom_y)],
-                                            egui::Stroke::new(bar_width * 0.8, active_color),
-                                        );
-                                    }
-                                }
-
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let save_btn = egui::Button::new(RichText::new("💾 SAVE").monospace().small())
-                                        .min_size(egui::vec2(65.0, 34.0));
-                                    if ui.add(save_btn).clicked() {
-                                        stem_to_save = Some((stem.id.clone(), stem.file_path.clone()));
-                                    }
-                                });
-                            });
-                        });
-                        ui.add_space(6.0);
-                    }
-                });
-
-                ui.separator();
-                ui.add_space(6.0);
-
-                ui.horizontal(|ui| {
-                    let save_all_btn = egui::Button::new(
-                        RichText::new("💾  EXPORT ALL STEMS (GUARDAR TODOS)")
-                            .monospace()
-                            .strong()
-                            .color(Color32::from_rgb(5, 5, 5)),
-                    )
-                    .fill(Color32::from_rgb(34, 211, 238))
-                    .min_size(egui::vec2(320.0, 36.0));
-
-                    if ui.add(save_all_btn).clicked() {
-                        self.save_all_preview_stems(&stems);
-                    }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let close_btn = egui::Button::new(RichText::new("✕  CLOSE PREVIEW").monospace())
-                            .min_size(egui::vec2(150.0, 36.0));
-                        if ui.add(close_btn).clicked() {
-                            self.close_preview_window(&stems);
-                        }
-                    });
-                });
-
-                if let Some(id) = stem_to_play {
-                    let mut updated_stems = stems.clone();
-                    let mut current_playing_id = self.state.current_playing_stem.clone();
-                    
-                    for s in &mut updated_stems {
-                        if s.id == id {
-                            if s.is_playing {
-                                s.is_playing = false;
-                                self.playback_controller.stop();
-                                current_playing_id = None;
-                            } else {
-                                s.is_playing = true;
-                                if let Err(e) = self.playback_controller.play(&s.file_path) {
-                                    self.state.push_log(format!("ERROR: Failed to play audio: {}", e));
-                                } else {
-                                    current_playing_id = Some(id.clone());
-                                }
-                            }
-                        } else {
-                            s.is_playing = false;
-                        }
-                    }
-                    
-                    self.state.active_preview_stems = Some(updated_stems);
-                    self.state.current_playing_stem = current_playing_id;
-                }
-
-                if let Some((id, path)) = stem_to_save {
-                    let extension = std::path::Path::new(&path)
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        .unwrap_or("wav");
-                    let default_filename = if id == "vocals" {
-                        "Separated_Vocals"
-                    } else {
-                        "Separated_Instrumental"
-                    };
-
-                    if let Some(target) = rfd::FileDialog::new()
-                        .set_file_name(format!("{}.{}", default_filename, extension))
-                        .add_filter("Audio", &[extension])
-                        .save_file()
-                    {
-                        let target_path = target.display().to_string();
-                        match self.backend.copy_file(&path, &target_path) {
-                            Ok(()) => {
-                                self.state.push_log(format!("SUCCESS: Saved stem to <{}>.", target_path));
-                            }
-                            Err(e) => {
-                                self.state.push_log(format!("ERROR: Failed to save stem: {}", e));
-                            }
-                        }
-                    }
-                }
-            });
-    }
-
-    fn save_all_preview_stems(&mut self, stems: &[crate::preview::StemPreview]) {
+    pub(crate) fn save_all_preview_stems(&mut self, stems: &[crate::preview::StemPreview]) {
         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
             let dest_dir = folder.display().to_string();
             let source_paths: Vec<String> = stems.iter().map(|s| s.file_path.clone()).collect();
@@ -944,7 +522,7 @@ impl PrismSplitApp {
         }
     }
 
-    fn close_preview_window(&mut self, stems: &[crate::preview::StemPreview]) {
+    pub(crate) fn close_preview_window(&mut self, stems: &[crate::preview::StemPreview]) {
         self.playback_controller.stop();
         self.state.current_playing_stem = None;
         
@@ -957,6 +535,11 @@ impl PrismSplitApp {
 }
 
 impl eframe::App for PrismSplitApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, "active_tab", &self.state.active_tab);
+        eframe::set_value(storage, "enable_preview", &self.state.enable_preview);
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_messages();
         self.handle_dropped_files(ctx);
@@ -1026,40 +609,85 @@ impl eframe::App for PrismSplitApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if self.state.is_initializing {
-                ui.centered_and_justified(|ui| {
-                    ui.label(
-                        RichText::new("PRISMSPLIT_CORE_BOOTSTRAP...")
-                            .monospace()
-                            .strong(),
-                    );
-                });
-                return;
-            }
+            let total_rect = ui.max_rect();
+            let painter = ui.painter();
+            
+            // Draw rack ears on left and right
+            let ear_width = 24.0;
+            let left_ear = egui::Rect::from_min_max(
+                total_rect.left_top(),
+                egui::pos2(total_rect.left() + ear_width, total_rect.bottom())
+            );
+            let right_ear = egui::Rect::from_min_max(
+                egui::pos2(total_rect.right() - ear_width, total_rect.top()),
+                total_rect.right_bottom()
+            );
+            
+            // Fill ears
+            let ear_color = Color32::from_rgb(20, 20, 20);
+            painter.rect_filled(left_ear, 0.0, ear_color);
+            painter.rect_filled(right_ear, 0.0, ear_color);
+            
+            // Bevel edges dividing the ears from the main chassis panel
+            let highlight = Color32::from_rgb(45, 45, 45);
+            let shadow = Color32::from_rgb(5, 5, 5);
+            
+            painter.line_segment([left_ear.right_top(), left_ear.right_bottom()], egui::Stroke::new(1.5, shadow));
+            painter.line_segment([left_ear.right_top() + egui::vec2(1.0, 0.0), left_ear.right_bottom() + egui::vec2(1.0, 0.0)], egui::Stroke::new(1.0, highlight));
+            
+            painter.line_segment([right_ear.left_top(), right_ear.left_bottom()], egui::Stroke::new(1.5, highlight));
+            painter.line_segment([right_ear.left_top() + egui::vec2(1.0, 0.0), right_ear.left_bottom() + egui::vec2(1.0, 0.0)], egui::Stroke::new(1.0, shadow));
+            
+            // Draw rack mounting screws
+            crate::widgets::draw_screw(ui, egui::pos2(left_ear.center().x, left_ear.top() + 30.0));
+            crate::widgets::draw_screw(ui, egui::pos2(left_ear.center().x, left_ear.bottom() - 30.0));
+            
+            crate::widgets::draw_screw(ui, egui::pos2(right_ear.center().x, right_ear.top() + 30.0));
+            crate::widgets::draw_screw(ui, egui::pos2(right_ear.center().x, right_ear.bottom() - 30.0));
+            
+            // Render actual content in the middle
+            ui.allocate_ui_at_rect(
+                egui::Rect::from_min_max(
+                    egui::pos2(total_rect.left() + ear_width + 12.0, total_rect.top() + 12.0),
+                    egui::pos2(total_rect.right() - ear_width - 12.0, total_rect.bottom() - 12.0)
+                ),
+                |ui| {
+                    if self.state.is_initializing {
+                        ui.centered_and_justified(|ui| {
+                            ui.label(
+                                RichText::new("PRISMSPLIT_CORE_BOOTSTRAP...")
+                                    .monospace()
+                                    .strong(),
+                            );
+                        });
+                        return;
+                    }
 
-            let engine_ready = self
-                .state
-                .health
-                .as_ref()
-                .map(|health| health.runtime_ready && health.dependencies_ready)
-                .unwrap_or(false);
+                    let engine_ready = self
+                        .state
+                        .health
+                        .as_ref()
+                        .map(|health| health.runtime_ready && health.dependencies_ready)
+                        .unwrap_or(false);
 
-            if !engine_ready {
-                self.render_setup(ui);
-                return;
-            }
+                    if !engine_ready {
+                        crate::panels::setup::show(self, ui);
+                        return;
+                    }
 
-            match self.state.active_tab {
-                Tab::Separate => self.render_separation(ui),
-                Tab::Models => self.render_models(ui),
-                Tab::Settings => self.render_settings(ui),
-            }
+                    match self.state.active_tab {
+                        Tab::Separate => crate::panels::separate::show(self, ui),
+                        Tab::Models => crate::panels::models::show(self, ui),
+                        Tab::Settings => crate::panels::settings::show(self, ui),
+                    }
+                }
+            );
         });
 
         self.auto_save_config();
 
         // Render live stem preview modal if active
-        self.render_preview_window(ctx);
+        crate::panels::preview::show(self, ctx);
 
         if self.state.is_processing || self.state.downloading_id.is_some() || self.state.active_preview_stems.is_some() {
             ctx.request_repaint_after(Duration::from_millis(100));
@@ -1076,18 +704,4 @@ fn default_output_dir(input_file: &str) -> String {
         .parent()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| ".".into())
-}
-
-fn selected_model_label(state: &AppState) -> String {
-    state
-        .catalog
-        .iter()
-        .find(|entry| entry.id == state.selected_model)
-        .map(|entry| format!("{} [{}]", entry.name, entry.backend))
-        .unwrap_or_else(|| "Select a model".into())
-}
-
-fn has_trusted_checksum(sha256: &str) -> bool {
-    let value = sha256.trim();
-    !value.is_empty() && !value.eq_ignore_ascii_case("replace-with-real-sha256")
 }

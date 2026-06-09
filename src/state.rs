@@ -9,7 +9,7 @@ pub const QUALITY_PRESETS: &[&str] = &[
     "Extreme (Aggressive Math)",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Tab {
     Separate,
     Models,
