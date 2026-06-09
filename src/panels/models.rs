@@ -25,6 +25,10 @@ pub fn show(app: &mut PrismSplitApp, ui: &mut Ui) {
                     ui.label(format!("Version: {}", entry.version));
                     ui.separator();
                     ui.label(format!("Installed: {}", entry.is_installed));
+                    if !has_trusted_checksum(&entry.sha256) {
+                        ui.separator();
+                        ui.colored_label(Color32::from_rgb(245, 158, 11), "⚠ Untrusted Hash");
+                    }
                 });
                 ui.label(format!("File: {}", entry.filename));
                 if entry.size_bytes > 0 {

@@ -117,14 +117,13 @@ where
 
     let (mut file, downloaded, total_size) = if status == reqwest::StatusCode::PARTIAL_CONTENT {
         let file = std::fs::OpenOptions::new()
-            .write(true)
             .append(true)
             .open(temp_path)?;
         
         let total_size = if let Some(content_range) = response.headers().get("Content-Range") {
             if let Ok(content_range_str) = content_range.to_str() {
                 content_range_str.split('/')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(0)
             } else {
@@ -135,6 +134,9 @@ where
         };
 
         (file, file_size, total_size)
+    } else if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        let _ = std::fs::remove_file(temp_path);
+        bail!("Range not satisfiable (resetting temp file): {}", status);
     } else if status.is_success() {
         let file = File::create(temp_path)?;
         let total_size = response.content_length().unwrap_or(0);

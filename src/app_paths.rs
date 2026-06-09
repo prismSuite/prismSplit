@@ -19,12 +19,14 @@ pub struct AppPaths {
 
 impl AppPaths {
     pub fn new(root: PathBuf, resource_dir: PathBuf) -> Self {
-        let app_data_dir = dirs::data_dir()
-            .unwrap_or_else(|| root.clone())
-            .join("PrismSplit");
-        let app_cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| root.clone())
-            .join("PrismSplit");
+        let app_data_dir = root.clone();
+        let app_cache_dir = if cfg!(test) {
+            root.clone()
+        } else {
+            dirs::cache_dir()
+                .unwrap_or_else(|| root.clone())
+                .join("PrismSplit")
+        };
 
         Self {
             runtime_dir: app_data_dir.join("runtime"),

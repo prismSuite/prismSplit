@@ -4,6 +4,10 @@ use std::io::BufReader;
 use std::path::Path;
 use rodio::{OutputStream, Sink};
 
+use egui::{Rect, Shape};
+
+pub type WaveformCache = std::sync::Arc<std::sync::Mutex<Option<(Rect, bool, Vec<Shape>)>>>;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StemPreview {
     pub id: String,
@@ -11,6 +15,8 @@ pub struct StemPreview {
     pub file_path: String,
     pub peaks: Vec<f32>,
     pub is_playing: bool,
+    #[serde(skip)]
+    pub cached_shapes: WaveformCache,
 }
 
 pub fn analyze_audio_peaks<P: AsRef<Path>>(path: P, num_points: usize) -> Result<Vec<f32>, anyhow::Error> {
@@ -68,40 +74,75 @@ pub fn analyze_audio_peaks<P: AsRef<Path>>(path: P, num_points: usize) -> Result
     Ok(peaks)
 }
 
-#[derive(Default)]
 pub struct PlaybackController {
-    _stream: Option<OutputStream>,
+    stream: Option<(OutputStream, rodio::OutputStreamHandle)>,
     sink: Option<Sink>,
+}
+
+impl Default for PlaybackController {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PlaybackController {
     pub fn new() -> Self {
-        Self::default()
+        let stream = OutputStream::try_default().ok();
+        let sink = stream.as_ref().and_then(|(_, handle)| Sink::try_new(handle).ok());
+        Self {
+            stream,
+            sink,
+        }
     }
 
     pub fn play(&mut self, file_path: &str) -> Result<(), anyhow::Error> {
         self.stop();
 
-        let (stream, stream_handle) = OutputStream::try_default()?;
-        let sink = Sink::try_new(&stream_handle)?;
-        
+        if self.stream.is_none() || self.sink.is_none() {
+            match OutputStream::try_default() {
+                Ok((stream, handle)) => {
+                    match Sink::try_new(&handle) {
+                        Ok(sink) => {
+                            self.stream = Some((stream, handle));
+                            self.sink = Some(sink);
+                        }
+                        Err(e) => {
+                            return Err(anyhow::anyhow!("Failed to create audio sink: {:?}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to open default audio device: {:?}", e));
+                }
+            }
+        }
+
         let file = File::open(file_path)?;
         let decoder = rodio::Decoder::new(BufReader::new(file))?;
-        
-        sink.append(decoder);
-        sink.play();
-        
-        self._stream = Some(stream);
-        self.sink = Some(sink);
-        
+
+        if let Some(ref sink) = self.sink {
+            sink.append(decoder);
+            sink.play();
+        }
+
         Ok(())
     }
 
     pub fn stop(&mut self) {
-        if let Some(sink) = self.sink.take() {
+        if let Some(ref sink) = self.sink {
             sink.stop();
         }
-        self._stream = None;
+        if let Some((_, ref handle)) = self.stream {
+            match Sink::try_new(handle) {
+                Ok(new_sink) => {
+                    self.sink = Some(new_sink);
+                }
+                Err(e) => {
+                    eprintln!("WARNING: Failed to recreate audio Sink on stop: {:?}", e);
+                    self.sink = None;
+                }
+            }
+        }
     }
 
     pub fn is_playing(&self) -> bool {

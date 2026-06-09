@@ -88,8 +88,8 @@ impl Backend {
                 "models_dir": self
                     .model_registry
                     .models_dir
-                    .lock()
-                    .map_err(|_| anyhow!("Failed to lock models_dir"))?
+                    .read()
+                    .map_err(|_| anyhow!("Failed to read models_dir"))?
                     .clone(),
             });
             let bridge = EngineBridge::new(python_exe, engine_script);
@@ -137,8 +137,8 @@ impl Backend {
             let dir = self
                 .model_registry
                 .models_dir
-                .lock()
-                .map_err(|_| anyhow!("Failed to lock models_dir"))?;
+                .read()
+                .map_err(|_| anyhow!("Failed to read models_dir"))?;
             std::fs::create_dir_all(&*dir)?;
             dir.join(&entry.filename)
         };
@@ -574,7 +574,7 @@ impl Backend {
 
     pub async fn kill_process(&self, job_id: &str) {
         let mut procs = self.active_processes.lock().await;
-        if let Some(mut child) = procs.remove(job_id) {
+        if let Some(child) = procs.remove(job_id) {
             if let Some(pid) = child.id() {
                 println!("KILLING child process [{}] with PID {}", job_id, pid);
                 #[cfg(target_os = "windows")]

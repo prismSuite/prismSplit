@@ -1,25 +1,25 @@
+// src-tauri/src/model_registry.rs
 use crate::models::ModelCatalogEntry;
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
-
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 #[derive(Debug)]
 pub struct ModelRegistry {
-    pub models_dir: Mutex<PathBuf>,
+    pub models_dir: RwLock<PathBuf>,
     pub catalog_path: PathBuf,
 }
 
 impl ModelRegistry {
     pub fn new(models_dir: PathBuf, catalog_path: PathBuf) -> Self {
         Self {
-            models_dir: Mutex::new(models_dir),
+            models_dir: RwLock::new(models_dir),
             catalog_path,
         }
     }
 
     pub fn set_models_dir(&self, path: PathBuf) {
-        if let Ok(mut dir) = self.models_dir.lock() {
+        if let Ok(mut dir) = self.models_dir.write() {
             *dir = path;
         }
     }
@@ -54,7 +54,7 @@ impl ModelRegistry {
     }
 
     pub fn is_model_installed(&self, entry: &ModelCatalogEntry) -> bool {
-        if let Ok(dir) = self.models_dir.lock() {
+        if let Ok(dir) = self.models_dir.read() {
             dir.join(&entry.filename).exists()
         } else {
             false
@@ -63,9 +63,9 @@ impl ModelRegistry {
 
     pub fn installed_model_path(&self, entry: &ModelCatalogEntry) -> Result<PathBuf> {
         self.models_dir
-            .lock()
+            .read()
             .map(|dir| dir.join(&entry.filename))
-            .map_err(|_| anyhow::anyhow!("Failed to lock models_dir mutex"))
+            .map_err(|_| anyhow::anyhow!("Failed to lock models_dir rwlock"))
     }
 
     pub fn validate_downloadable(&self, entry: &ModelCatalogEntry) -> Result<()> {

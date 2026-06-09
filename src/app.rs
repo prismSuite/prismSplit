@@ -3,7 +3,7 @@ use crate::engine_bridge::EngineEvent;
 use crate::panels::log_console;
 use crate::panels::models::has_trusted_checksum;
 use crate::state::{AppMsg, AppState, Tab};
-use crate::widgets::{fieldset, nav_button, status_chip};
+use crate::widgets::{nav_button, status_chip};
 use eframe::egui::{self, Align, Color32, RichText};
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -301,14 +301,19 @@ impl PrismSplitApp {
             return;
         }
 
-        if let Some(path) = dropped
-            .first()
-            .and_then(|file| file.path.as_ref())
-            .map(|path| path.display().to_string())
-        {
-            self.state.input_file = path.clone();
-            self.state
-                .push_log(format!("FILE LOADED via DnD: {}", path));
+        if let Some(path) = dropped.first().and_then(|file| file.path.as_ref()) {
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()) {
+                    let allowed = ["wav", "mp3", "flac", "m4a", "ogg", "aac"];
+                    if allowed.contains(&ext.as_str()) {
+                        self.state.input_file = path.display().to_string();
+                        self.state
+                            .push_log(format!("FILE LOADED via DnD: {}", self.state.input_file));
+                        return;
+                    }
+                }
+            }
+            self.state.push_log("ERROR: Invalid file dropped. Only audio files (wav, mp3, flac, m4a, ogg, aac) are supported.");
         }
     }
 
@@ -460,6 +465,7 @@ impl PrismSplitApp {
                                                 file_path: vocals_path,
                                                 peaks,
                                                 is_playing: false,
+                                                cached_shapes: Default::default(),
                                             });
                                         }
                                         if let Ok(peaks) = crate::preview::analyze_audio_peaks(&instrumental_path, 180) {
@@ -469,6 +475,7 @@ impl PrismSplitApp {
                                                 file_path: instrumental_path,
                                                 peaks,
                                                 is_playing: false,
+                                                cached_shapes: Default::default(),
                                             });
                                         }
                                         stems
@@ -538,6 +545,7 @@ impl eframe::App for PrismSplitApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "active_tab", &self.state.active_tab);
         eframe::set_value(storage, "enable_preview", &self.state.enable_preview);
+        let _ = self.backend.update_config(self.state.config.clone());
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {

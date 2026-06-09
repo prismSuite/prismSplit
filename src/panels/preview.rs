@@ -1,4 +1,4 @@
-use egui::{Color32, RichText, Ui, Align2};
+use egui::{Color32, RichText};
 use crate::app::PrismSplitApp;
 
 pub fn show(app: &mut PrismSplitApp, ctx: &egui::Context) {
@@ -69,24 +69,39 @@ pub fn show(app: &mut PrismSplitApp, ctx: &egui::Context) {
 
                             let peak_count = stem.peaks.len();
                             if peak_count > 0 {
-                                let bar_width = rect.width() / (peak_count as f32);
                                 let active_color = if stem.is_playing {
                                     Color32::from_rgb(34, 211, 238)
                                 } else {
                                     Color32::from_rgb(120, 130, 145)
                                 };
+
+                                let shapes = {
+                                    let mut cache = stem.cached_shapes.lock().unwrap();
+                                    let needs_rebuild = match &*cache {
+                                        Some((cached_rect, cached_playing, _)) => *cached_rect != rect || *cached_playing != stem.is_playing,
+                                        None => true,
+                                    };
+                                    if needs_rebuild {
+                                        let bar_width = rect.width() / (peak_count as f32);
+                                        let mut new_shapes = Vec::with_capacity(peak_count);
+                                        for (i, &amp) in stem.peaks.iter().enumerate() {
+                                            let x = rect.left() + (i as f32) * bar_width + (bar_width / 2.0);
+                                            let half_height = (amp * (rect.height() / 2.0)) * 0.95;
+                                            let top_y = rect.center().y - half_height;
+                                            let bottom_y = rect.center().y + half_height;
+                                            new_shapes.push(egui::Shape::line_segment(
+                                                [egui::pos2(x, top_y), egui::pos2(x, bottom_y)],
+                                                egui::Stroke::new(bar_width * 0.8, active_color),
+                                            ));
+                                        }
+                                        *cache = Some((rect, stem.is_playing, new_shapes.clone()));
+                                        new_shapes
+                                    } else {
+                                        cache.as_ref().unwrap().2.clone()
+                                    }
+                                };
                                 
-                                for (i, &amp) in stem.peaks.iter().enumerate() {
-                                    let x = rect.left() + (i as f32) * bar_width + (bar_width / 2.0);
-                                    let half_height = (amp * (rect.height() / 2.0)) * 0.95;
-                                    let top_y = rect.center().y - half_height;
-                                    let bottom_y = rect.center().y + half_height;
-                                    
-                                    painter.line_segment(
-                                        [egui::pos2(x, top_y), egui::pos2(x, bottom_y)],
-                                        egui::Stroke::new(bar_width * 0.8, active_color),
-                                    );
-                                }
+                                painter.extend(shapes);
                             }
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
