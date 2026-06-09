@@ -13,6 +13,7 @@ use crate::models::{EngineHealth, SetupStatus};
 pub struct RuntimeManager {
     paths: AppPaths,
     prepare_lock: Mutex<()>,
+    cached_gpu_devices: tokio::sync::OnceCell<Vec<String>>,
 }
 
 impl RuntimeManager {
@@ -20,6 +21,7 @@ impl RuntimeManager {
         Self {
             paths,
             prepare_lock: Mutex::new(()),
+            cached_gpu_devices: tokio::sync::OnceCell::new(),
         }
     }
 
@@ -54,6 +56,13 @@ impl RuntimeManager {
     }
 
     async fn get_gpu_devices(&self) -> Vec<String> {
+        self.cached_gpu_devices
+            .get_or_init(|| async { self.detect_gpu_devices().await })
+            .await
+            .clone()
+    }
+
+    async fn detect_gpu_devices(&self) -> Vec<String> {
         if cfg!(target_os = "windows") {
             let output = Command::new("wmic")
                 .args(["path", "win32_VideoController", "get", "name"])
@@ -368,7 +377,7 @@ impl RuntimeManager {
     async fn bootstrap_python_available(&self) -> bool {
         match self.bootstrap_python_path() {
             Some(path) if path.is_file() => true,
-            Some(path) if path == PathBuf::from("python") => self.command_exists("python").await,
+            Some(path) if path == Path::new("python") => self.command_exists("python").await,
             Some(_) => false,
             None => false,
         }

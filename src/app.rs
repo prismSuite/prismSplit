@@ -493,15 +493,15 @@ impl PrismSplitApp {
                 }
             }
 
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                if ui.button("PREPARE ENGINE").clicked() {
+            ui.add_space(10.0);
+            ui.columns(3, |columns| {
+                if crate::widgets::custom_button(&mut columns[0], "PREPARE ENGINE", true, Color32::from_rgb(34, 211, 238)) {
                     self.prepare_engine();
                 }
-                if ui.button("SMART REPAIR RUNTIME").clicked() {
+                if crate::widgets::custom_button(&mut columns[1], "SMART REPAIR", true, Color32::from_rgb(245, 158, 11)) {
                     self.repair_engine();
                 }
-                if ui.button("REFRESH HEALTH").clicked() {
+                if crate::widgets::custom_button(&mut columns[2], "REFRESH", true, Color32::from_rgb(180, 187, 193)) {
                     self.refresh_health();
                 }
             });
@@ -567,13 +567,8 @@ impl PrismSplitApp {
                 egui::ComboBox::from_id_source("quality")
                     .selected_text(self.state.quality.as_str())
                     .show_ui(ui, |ui| {
-                        for option in [
-                            "Fast (CPU)",
-                            "Normal (CUDA)",
-                            "High Quality (Overlap)",
-                            "Extreme (Aggressive Math)",
-                        ] {
-                            ui.selectable_value(&mut self.state.quality, option.to_string(), option);
+                        for option in crate::state::QUALITY_PRESETS {
+                            ui.selectable_value(&mut self.state.quality, option.to_string(), *option);
                         }
                     });
 
@@ -585,20 +580,46 @@ impl PrismSplitApp {
         ui.add_space(12.0);
         fieldset(ui, "EXECUTION_NODE", |ui| {
             if self.state.is_processing {
+                // Animate VU meter
+                let time = ui.input(|i| i.time);
+                let val_l = (time * 8.0).sin().abs() as f32 * 0.7 + (time * 19.0).cos().abs() as f32 * 0.25;
+                let val_l = val_l.clamp(0.1, 0.98);
+                let peak_l = val_l + 0.02;
+                ui.label(RichText::new("L-CH LEVEL").monospace().small());
+                crate::widgets::vu_meter(ui, val_l, peak_l);
+                ui.add_space(4.0);
+                
+                let val_r = (time * 7.1).cos().abs() as f32 * 0.65 + (time * 15.3).sin().abs() as f32 * 0.3;
+                let val_r = val_r.clamp(0.1, 0.98);
+                let peak_r = val_r + 0.02;
+                ui.label(RichText::new("R-CH LEVEL").monospace().small());
+                crate::widgets::vu_meter(ui, val_r, peak_r);
+                ui.add_space(8.0);
+
                 ui.add(
                     egui::ProgressBar::new(self.state.process_progress / 100.0)
                         .text(format!("{:.0}% active", self.state.process_progress)),
                 );
+            } else {
+                // Show noise floor (signal present indicator)
+                ui.label(RichText::new("L-CH LEVEL (STANDBY)").monospace().small());
+                crate::widgets::vu_meter(ui, 0.02, 0.05);
+                ui.add_space(4.0);
+                ui.label(RichText::new("R-CH LEVEL (STANDBY)").monospace().small());
+                crate::widgets::vu_meter(ui, 0.015, 0.04);
+                ui.add_space(8.0);
             }
 
             let can_start = !self.state.input_file.trim().is_empty()
                 && !self.state.selected_model.trim().is_empty()
                 && !self.state.is_processing;
 
-            if ui
-                .add_enabled(can_start, egui::Button::new("START SEPARATION"))
-                .clicked()
-            {
+            if crate::widgets::custom_button(
+                ui,
+                "START SEPARATION ENGINE",
+                can_start,
+                Color32::from_rgb(34, 211, 238),
+            ) {
                 self.state.is_processing = true;
                 self.process_audio();
             }
@@ -890,7 +911,7 @@ impl PrismSplitApp {
                     };
 
                     if let Some(target) = rfd::FileDialog::new()
-                        .set_file_name(&format!("{}.{}", default_filename, extension))
+                        .set_file_name(format!("{}.{}", default_filename, extension))
                         .add_filter("Audio", &[extension])
                         .save_file()
                     {

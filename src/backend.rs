@@ -228,14 +228,18 @@ impl Backend {
         });
 
         let job_id = "job-local".to_string();
-        let (terminal, child) = bridge
-            .run_command_stream("separate", payload, on_event)
-            .await?;
+        let mut child = bridge.spawn_command("separate", payload).await?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("Failed to capture engine stdout"))?;
 
         {
             let mut procs = self.active_processes.lock().await;
             procs.insert(job_id.clone(), child);
         }
+
+        let stream_res = EngineBridge::stream_stdout(stdout, on_event).await;
 
         let wait_result = {
             // Block inside this scope to keep lock short, but we wait asynchronously
@@ -250,6 +254,8 @@ impl Backend {
             }
         };
         let _ = wait_result;
+
+        let terminal = stream_res?;
 
         match terminal.event.as_str() {
             "result" => {
@@ -395,15 +401,31 @@ impl Backend {
             .map(|mut entry| {
                 let client = client_ref.clone();
                 async move {
-                    if let Ok(response) = client.head(&entry.url).send().await {
-                        if let Some(length) = response.content_length() {
-                            entry.size_bytes = length;
+                    let mut delay = std::time::Duration::from_millis(500);
+                    let mut retries = 3;
+                    while retries > 0 {
+                        match client.head(&entry.url).send().await {
+                            Ok(response) => {
+                                if response.status().is_success() {
+                                    if let Some(length) = response.content_length() {
+                                        entry.size_bytes = length;
+                                    }
+                                    break;
+                                } else if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                                    tokio::time::sleep(delay * 2).await;
+                                }
+                            }
+                            Err(_) => {
+                                tokio::time::sleep(delay).await;
+                            }
                         }
+                        retries -= 1;
+                        delay *= 2;
                     }
                     entry
                 }
             })
-            .buffer_unordered(10)
+            .buffer_unordered(5)
             .collect::<Vec<_>>()
             .await;
 

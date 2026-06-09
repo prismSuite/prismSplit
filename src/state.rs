@@ -2,6 +2,13 @@ use crate::models::{AppConfig, EngineHealth, ModelCatalogEntry, ProcessAudioResp
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender};
 
+pub const QUALITY_PRESETS: &[&str] = &[
+    "Fast (CPU)",
+    "Normal (CUDA)",
+    "High Quality (Overlap)",
+    "Extreme (Aggressive Math)",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     Separate,
@@ -70,7 +77,7 @@ impl AppState {
             input_file: String::new(),
             output_dir: String::new(),
             selected_model: String::new(),
-            quality: "Normal (CUDA)".into(),
+            quality: QUALITY_PRESETS[1].into(),
             export_format: "WAV".into(),
             is_processing: false,
             process_progress: 0.0,

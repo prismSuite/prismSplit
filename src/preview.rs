@@ -16,31 +16,49 @@ pub struct StemPreview {
 pub fn analyze_audio_peaks<P: AsRef<Path>>(path: P, num_points: usize) -> Result<Vec<f32>, anyhow::Error> {
     let file = File::open(path)?;
     let decoder = rodio::Decoder::new(BufReader::new(file))?;
-    
-    // Decode samples and map to float 0.0 - 1.0
-    let samples: Vec<f32> = decoder
-        .map(|sample| (sample as f32) / (i16::MAX as f32))
-        .map(|s| s.abs())
-        .collect();
 
-    if samples.is_empty() {
-        return Ok(vec![0.0; num_points]);
-    }
+    let mut peaks = Vec::with_capacity(num_points * 2);
+    let mut current_max = 0.0f32;
+    let mut count = 0;
+    let mut chunk_size = 1;
 
-    let chunk_size = samples.len() / num_points;
-    let mut peaks = Vec::with_capacity(num_points);
+    for sample in decoder {
+        let val = (sample as f32 / i16::MAX as f32).abs();
+        if val > current_max {
+            current_max = val;
+        }
+        count += 1;
+        if count >= chunk_size {
+            peaks.push(current_max);
+            current_max = 0.0;
+            count = 0;
 
-    for chunk in samples.chunks(if chunk_size > 0 { chunk_size } else { 1 }) {
-        let mut max = 0.0f32;
-        for &val in chunk {
-            if val > max {
-                max = val;
+            if peaks.len() >= num_points * 2 {
+                for i in 0..num_points {
+                    peaks[i] = peaks[2 * i].max(peaks[2 * i + 1]);
+                }
+                peaks.truncate(num_points);
+                chunk_size *= 2;
             }
         }
-        peaks.push(max);
-        if peaks.len() >= num_points {
-            break;
+    }
+
+    if count > 0 {
+        peaks.push(current_max);
+    }
+
+    while peaks.len() > num_points {
+        let new_len = peaks.len().div_ceil(2);
+        for i in 0..new_len {
+            let idx1 = 2 * i;
+            let idx2 = 2 * i + 1;
+            if idx2 < peaks.len() {
+                peaks[i] = peaks[idx1].max(peaks[idx2]);
+            } else {
+                peaks[i] = peaks[idx1];
+            }
         }
+        peaks.truncate(new_len);
     }
 
     while peaks.len() < num_points {
@@ -50,6 +68,7 @@ pub fn analyze_audio_peaks<P: AsRef<Path>>(path: P, num_points: usize) -> Result
     Ok(peaks)
 }
 
+#[derive(Default)]
 pub struct PlaybackController {
     _stream: Option<OutputStream>,
     sink: Option<Sink>,
@@ -57,10 +76,7 @@ pub struct PlaybackController {
 
 impl PlaybackController {
     pub fn new() -> Self {
-        Self {
-            _stream: None,
-            sink: None,
-        }
+        Self::default()
     }
 
     pub fn play(&mut self, file_path: &str) -> Result<(), anyhow::Error> {

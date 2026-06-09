@@ -98,21 +98,13 @@ impl EngineBridge {
         Ok((events, child))
     }
 
-    pub async fn run_command_stream<F>(
-        &self,
-        command: &str,
-        payload: Value,
+    pub async fn stream_stdout<F>(
+        stdout: tokio::process::ChildStdout,
         mut on_event: F,
-    ) -> Result<(EngineEvent, Child)>
+    ) -> Result<EngineEvent>
     where
         F: FnMut(&EngineEvent) + Send + 'static,
     {
-        let mut child = self.spawn_command(command, payload).await?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| anyhow!("Failed to capture engine stdout"))?;
-
         let mut lines = BufReader::new(stdout).lines();
 
         while let Some(line) = lines.next_line().await? {
@@ -125,10 +117,29 @@ impl EngineBridge {
             on_event(&event);
 
             if is_terminal {
-                return Ok((event, child));
+                return Ok(event);
             }
         }
 
         Err(anyhow!("Engine returned no terminal event"))
+    }
+
+    pub async fn run_command_stream<F>(
+        &self,
+        command: &str,
+        payload: Value,
+        on_event: F,
+    ) -> Result<(EngineEvent, Child)>
+    where
+        F: FnMut(&EngineEvent) + Send + 'static,
+    {
+        let mut child = self.spawn_command(command, payload).await?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("Failed to capture engine stdout"))?;
+
+        let event = Self::stream_stdout(stdout, on_event).await?;
+        Ok((event, child))
     }
 }
